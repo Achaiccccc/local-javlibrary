@@ -37,6 +37,15 @@ function extractText(value) {
 }
 
 /**
+ * 修复 XML 中未转义的 & 符号（如 URL 中的 &query=value）
+ * XML 中 & 必须写成 &amp;，否则会报错 "Invalid character in entity name"
+ * 仅替换「非实体」的 &，不破坏已有的 &amp; / &lt; / &#123; 等
+ */
+function fixUnescapedAmpersands(content) {
+  return content.replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/gi, '&amp;');
+}
+
+/**
  * 解析NFO文件
  * @param {string} nfoPath - NFO文件路径
  * @returns {Promise<Object>} - 解析后的电影数据
@@ -49,13 +58,18 @@ async function parseNfoFile(nfoPath) {
     // 检测编码
     const encoding = detectEncoding(buffer);
     
-    // 转换为UTF-8
+    // 转换为UTF-8并去除 BOM，避免解析异常
     let content;
     if (encoding.toLowerCase() === 'utf-8') {
       content = buffer.toString('utf-8');
     } else {
       content = iconv.decode(buffer, encoding);
     }
+    if (content.charCodeAt(0) === 0xFEFF) {
+      content = content.slice(1);
+    }
+    // 修复 URL 等文本中未转义的 &，避免 "Invalid character in entity name" 解析错误
+    content = fixUnescapedAmpersands(content);
     
     // 解析XML
     const parser = new xml2js.Parser({

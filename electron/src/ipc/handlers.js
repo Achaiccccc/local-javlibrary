@@ -1976,6 +1976,8 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       let totalCount = 0;
       let totalProcessed = 0;
       let allPathsTotal = 0;
+      /** @type {{ path: string, reason: string }[]} */
+      let allFailedList = [];
       
       // 先统计所有路径的文件总数（用于准确计算进度）
       for (const dataPath of dataPaths) {
@@ -2036,6 +2038,12 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           totalFailed += result.failed || 0;
           totalCount += result.total || 0;
           totalProcessed += result.total || 0;
+          if (result.failedList && result.failedList.length > 0) {
+            allFailedList = allFailedList.concat(result.failedList.map(item => ({
+              path: item.path,
+              reason: item.reason
+            })));
+          }
         } catch (error) {
           console.error(`扫描路径失败: ${dataPath}`, error);
           totalFailed++;
@@ -2059,7 +2067,8 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           window.webContents.send('scan:completed', {
             total: totalCount,
             success: totalSuccess,
-            failed: totalFailed
+            failed: totalFailed,
+            failedList: allFailedList
           });
         }
       });
@@ -2068,7 +2077,8 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         success: true,
         total: totalCount,
         successCount: totalSuccess,
-        failed: totalFailed
+        failed: totalFailed,
+        failedList: allFailedList
       };
     } catch (error) {
       console.error('扫描失败:', error);

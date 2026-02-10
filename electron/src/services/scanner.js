@@ -109,6 +109,8 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
   let success = 0;
   let failed = 0;
   let processed = 0;
+  /** @type {{ path: string, reason: string }[]} */
+  const failedList = [];
 
   try {
     // 先统计总数（用于进度计算）
@@ -129,6 +131,17 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
       try {
         // 解析NFO文件
         const movieData = await parseNfoFile(nfoPath);
+        const relativeNfoPath = path.relative(dataPath, nfoPath);
+        if (!movieData.code || String(movieData.code).trim() === '') {
+          failedList.push({
+            path: relativeNfoPath,
+            reason: '识别码为空（NFO 需包含 <uniqueid> 或 <num> 且内容非空）'
+          });
+          failed++;
+          processed++;
+          if (progressCallback) progressCallback(processed, total, success, failed);
+          continue;
+        }
         
         // 获取图片路径
         const { poster, fanart } = await getImagePaths(movieFolderPath);
@@ -235,21 +248,23 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
           progressCallback(processed, total, success, failed);
         }
       } catch (error) {
+        const relativeNfoPath = path.relative(dataPath, nfoPath).replace(/\\/g, '/');
+        failedList.push({
+          path: relativeNfoPath || nfoPath,
+          reason: error && error.message ? error.message : String(error)
+        });
         console.error(`处理作品失败: ${movieFolderPath}`, error);
         failed++;
         processed++;
         
-        // 发送进度更新（包含失败）
         if (progressCallback) {
           progressCallback(processed, total, success, failed);
         }
       }
     }
     
-    // 由于在扫描开始前已经清空了所有数据，这里不需要再清理
     console.log('扫描完成');
-    
-    return { total, success, failed };
+    return { total, success, failed, failedList };
   } catch (error) {
     console.error('扫描data文件夹失败:', error);
     throw error;

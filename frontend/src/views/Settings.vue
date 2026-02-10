@@ -300,13 +300,29 @@ const scanData = async () => {
       
       // 弹窗提示结果
       await ElMessageBox.alert(
-        `扫描完成！\n总计: ${result.total}\n成功: ${result.success}\n失败: ${result.failed}`,
+        `扫描完成！\n总计: ${result.total}\n成功: ${result.successCount ?? result.success}\n失败: ${result.failed}`,
         '扫描完成',
         {
           confirmButtonText: '确定',
           type: result.failed > 0 ? 'warning' : 'success'
         }
       );
+      // 若有识别失败的 NFO，弹出失败列表
+      const failedList = result.failedList || [];
+      if (failedList.length > 0) {
+        const failMsg = failedList
+          .map((f, i) => `${i + 1}. ${f.path}\n   原因：${f.reason}`)
+          .join('\n\n');
+        await ElMessageBox.alert(
+          failMsg,
+          `识别失败的 NFO 文件（共 ${failedList.length} 个）`,
+          {
+            confirmButtonText: '确定',
+            type: 'warning',
+            customClass: 'scan-failed-list-dialog'
+          }
+        );
+      }
     } else {
       scanProgress.value.status = 'exception';
       ElMessage.error('扫描失败: ' + (result?.message || '未知错误'));
@@ -409,5 +425,13 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 0 20px;
+}
+</style>
+<style>
+/* 识别失败列表弹窗：可滚动、保留换行 */
+.scan-failed-list-dialog .el-message-box__content {
+  max-height: 60vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
 }
 </style>
