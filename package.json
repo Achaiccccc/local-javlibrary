@@ -1,6 +1,6 @@
 {
   "name": "javlibrary",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "本地影视库管理系统",
   "main": "electron/main.js",
   "scripts": {
@@ -21,8 +21,8 @@
     "javlibrary",
     "media-library"
   ],
-  "author": "",
-  "license": "MIT",
+  "author": "Achaiccccc",
+  "license": "GPL-3.0",
   "devDependencies": {
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
@@ -31,6 +31,7 @@
     "electron-rebuild": "^3.2.9"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.8.11",
     "chokidar": "^3.5.3",
     "electron-store": "^8.1.0",
     "fast-glob": "^3.3.2",

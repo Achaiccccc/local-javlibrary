@@ -4,6 +4,7 @@ const iconv = require('iconv-lite');
 const jschardet = require('jschardet');
 const js2xmlparser = require('js2xmlparser');
 const path = require('path');
+const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 
 /**
  * 检测文件编码
@@ -97,9 +98,9 @@ async function parseNfoFile(nfoPath) {
       }
     }
     
-    // 提取所有字段，使用 extractText 处理可能的对象格式
+    // 提取所有字段；识别码兼容 uniqueid 与 num 两种标签
     const title = extractText(movie.title);
-    const code = extractText(movie.uniqueid);
+    const code = extractText(movie.uniqueid) || extractText(movie.num) || '';
     const runtime = movie.runtime ? parseInt(extractText(movie.runtime)) : null;
     const premiered = movie.premiered ? extractText(movie.premiered) : null;
     const director = movie.director ? extractText(movie.director) : null;
@@ -122,7 +123,7 @@ async function parseNfoFile(nfoPath) {
 }
 
 /**
- * 写入NFO文件
+ * 写入NFO文件（全量覆盖，用于新建或不需要保留原有结构的场景）
  * @param {string} nfoPath - NFO文件路径
  * @param {Object} movieData - 电影数据对象
  * @returns {Promise<void>}
@@ -192,8 +193,184 @@ async function writeNfoFile(nfoPath, movieData) {
   }
 }
 
+/**
+ * 在根节点下设置或创建单个文本子节点（仅更新该标签内容，不删其他节点）
+ * @param {Document} doc
+ * @param {Element} root - <movie>
+ * @param {string} tagName - 如 title, runtime
+ * @param {string} value
+ */
+function setOrCreateTextChild(doc, root, tagName, value) {
+  const list = root.getElementsByTagName(tagName);
+  let el = list[0] || null;
+  if (!el) {
+    el = doc.createElement(tagName);
+    root.appendChild(el);
+  }
+  const text = String(value ?? '');
+  if (el.firstChild) el.firstChild.nodeValue = text;
+  else el.appendChild(doc.createTextNode(text));
+}
+
+/**
+ * 移除根节点下所有名为 tagName 的直接子元素（仅限直接子节点）
+ * @param {Element} root
+ * @param {string} tagName
+ */
+function removeDirectChildrenByTag(root, tagName) {
+  const toRemove = [];
+  for (let i = 0; i < root.childNodes.length; i++) {
+    const n = root.childNodes[i];
+    if (n.nodeType === 1 && n.tagName === tagName) toRemove.push(n);
+  }
+  toRemove.forEach(n => root.removeChild(n));
+}
+
+/** 根节点下子元素使用的缩进（与常见 NFO 格式一致） */
+const INDENT = '\n  ';
+
+/**
+ * 在参考节点前插入新创建的一组节点，并在每个元素后加入换行+缩进以保持格式
+ * @param {Document} doc
+ * @param {Element} root
+ * @param {string} parentTag - 如 'actor', 'genre', 'tag'
+ * @param {string[]} values - 文本列表；对 actor 为 name 列表，会生成 <actor><name>x</name></actor>
+ * @param {Node|null} insertBeforeNode - 在此节点前插入；null 则追加到 root 末尾
+ */
+function insertDirectChildren(doc, root, parentTag, values, insertBeforeNode) {
+  if (!Array.isArray(values) || values.length === 0) return;
+  const fragment = doc.createDocumentFragment();
+  for (let i = 0; i < values.length; i++) {
+    const val = values[i];
+    const outer = doc.createElement(parentTag);
+    if (parentTag === 'actor') {
+      const nameEl = doc.createElement('name');
+      nameEl.appendChild(doc.createTextNode(String(val)));
+      outer.appendChild(nameEl);
+    } else {
+      outer.appendChild(doc.createTextNode(String(val)));
+    }
+    fragment.appendChild(outer);
+    if (i < values.length - 1) fragment.appendChild(doc.createTextNode(INDENT));
+  }
+  fragment.appendChild(doc.createTextNode('\n'));
+  if (insertBeforeNode) root.insertBefore(fragment, insertBeforeNode);
+  else root.appendChild(fragment);
+}
+
+/**
+ * 若 ref 为仅空白的文本节点，则从 root 中移除 ref 及其后连续的所有空白文本节点，避免留下大段空行
+ */
+function removeFollowingWhitespace(root, ref) {
+  if (!ref || !ref.parentNode) return;
+  let w = ref;
+  while (w && w.nodeType === 3 && /^\s*$/.test(w.nodeValue)) {
+    const next = w.nextSibling;
+    root.removeChild(w);
+    w = next;
+  }
+}
+
+/**
+ * 仅更新 NFO 中可编辑字段（基于 DOM：只改对应节点，其余原样保留）
+ * @param {string} nfoPath - NFO 文件路径
+ * @param {object} movieData - 编辑后的数据（与 writeNfoFile 的 movieData 结构一致）
+ * @returns {Promise<void>}
+ */
+async function updateNfoFilePartial(nfoPath, movieData) {
+  const buffer = await fs.readFile(nfoPath);
+  const encoding = detectEncoding(buffer);
+  const content = encoding.toLowerCase() === 'utf-8'
+    ? buffer.toString('utf-8')
+    : iconv.decode(buffer, encoding);
+
+  const doc = new DOMParser().parseFromString(content, 'text/xml');
+  const root = doc.documentElement;
+  if (!root || root.tagName !== 'movie') {
+    throw new Error('NFO 根节点不是 movie');
+  }
+
+  if (movieData.title !== undefined) setOrCreateTextChild(doc, root, 'title', movieData.title || '');
+  if (movieData.runtime !== undefined) {
+    if (movieData.runtime != null && movieData.runtime !== '') setOrCreateTextChild(doc, root, 'runtime', String(movieData.runtime));
+    else {
+      const list = root.getElementsByTagName('runtime');
+      if (list[0]) root.removeChild(list[0]);
+    }
+  }
+  if (movieData.code !== undefined) {
+    const codeText = movieData.code != null && movieData.code !== '' ? String(movieData.code) : '';
+    const hasUniqueid = root.getElementsByTagName('uniqueid')[0];
+    const hasNum = root.getElementsByTagName('num')[0];
+    if (hasUniqueid) {
+      hasUniqueid.setAttribute('type', 'num');
+      hasUniqueid.setAttribute('default', 'true');
+      if (hasUniqueid.firstChild) hasUniqueid.firstChild.nodeValue = codeText;
+      else hasUniqueid.appendChild(doc.createTextNode(codeText));
+    }
+    if (hasNum) {
+      if (hasNum.firstChild) hasNum.firstChild.nodeValue = codeText;
+      else hasNum.appendChild(doc.createTextNode(codeText));
+    }
+    if (!hasUniqueid && !hasNum) {
+      const uid = doc.createElement('uniqueid');
+      uid.setAttribute('type', 'num');
+      uid.setAttribute('default', 'true');
+      uid.appendChild(doc.createTextNode(codeText));
+      const afterTitle = root.getElementsByTagName('title')[0];
+      const frag = doc.createDocumentFragment();
+      frag.appendChild(doc.createTextNode(INDENT));
+      frag.appendChild(uid);
+      frag.appendChild(doc.createTextNode(INDENT));
+      if (afterTitle && afterTitle.nextSibling) root.insertBefore(frag, afterTitle.nextSibling);
+      else root.appendChild(frag);
+    }
+  }
+  if (movieData.director !== undefined) setOrCreateTextChild(doc, root, 'director', movieData.director == null || movieData.director === '' ? '----' : movieData.director);
+  if (movieData.premiered !== undefined) {
+    if (movieData.premiered != null && movieData.premiered !== '') setOrCreateTextChild(doc, root, 'premiered', movieData.premiered);
+    else {
+      const list = root.getElementsByTagName('premiered');
+      if (list[0]) root.removeChild(list[0]);
+    }
+  }
+  if (movieData.studio !== undefined) setOrCreateTextChild(doc, root, 'studio', movieData.studio == null || movieData.studio === '' ? '----' : movieData.studio);
+
+  if (movieData.actors !== undefined) {
+    const actors = Array.isArray(movieData.actors) ? movieData.actors.map(a => typeof a === 'string' ? a : (a && a.name) || '') : [];
+    const firstActor = root.getElementsByTagName('actor')[0];
+    const refActor = firstActor ? firstActor.nextSibling : null;
+    removeDirectChildrenByTag(root, 'actor');
+    insertDirectChildren(doc, root, 'actor', actors, refActor);
+    removeFollowingWhitespace(root, refActor);
+  }
+  if (movieData.genres !== undefined) {
+    const genres = Array.isArray(movieData.genres) ? movieData.genres : [];
+    const firstGenre = root.getElementsByTagName('genre')[0];
+    const refGenre = firstGenre ? firstGenre.nextSibling : null;
+    removeDirectChildrenByTag(root, 'genre');
+    insertDirectChildren(doc, root, 'genre', genres, refGenre);
+    removeFollowingWhitespace(root, refGenre);
+  }
+  if (movieData.genres !== undefined) {
+    const tags = Array.isArray(movieData.genres) ? movieData.genres : [];
+    const firstTag = root.getElementsByTagName('tag')[0];
+    const refTag = firstTag ? firstTag.nextSibling : null;
+    removeDirectChildrenByTag(root, 'tag');
+    insertDirectChildren(doc, root, 'tag', tags, refTag);
+    removeFollowingWhitespace(root, refTag);
+  }
+
+  const xmlString = new XMLSerializer().serializeToString(doc);
+  const BOM = '\uFEFF';
+  await fs.ensureDir(path.dirname(nfoPath));
+  await fs.writeFile(nfoPath, BOM + xmlString, 'utf8');
+  console.log(`NFO文件已局部更新: ${nfoPath}`);
+}
+
 module.exports = {
   parseNfoFile,
   detectEncoding,
-  writeNfoFile
+  writeNfoFile,
+  updateNfoFilePartial
 };

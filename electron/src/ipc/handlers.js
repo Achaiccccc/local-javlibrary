@@ -3,7 +3,7 @@ const { getDataPath, getDataPaths, setDataPath, addDataPath, removeDataPath, val
 const { getSequelize } = require('../config/database');
 const { scanDataFolder } = require('../services/scanner');
 const { Op } = require('sequelize');
-const { parseNfoFile, writeNfoFile } = require('../utils/xmlParser');
+const { parseNfoFile, writeNfoFile, updateNfoFilePartial } = require('../utils/xmlParser');
 const path = require('path');
 const fs = require('fs-extra');
 const Store = require('electron-store');
@@ -584,8 +584,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           : (movie.Genres && Array.isArray(movie.Genres) ? movie.Genres.map(g => g.name) : [])
       };
       
-      // 写入NFO文件
-      await writeNfoFile(nfoPath, movieData);
+      // 仅更新 NFO 中可编辑字段，保留其余节点（若解析失败则全量覆盖）
+      try {
+        await updateNfoFilePartial(nfoPath, movieData);
+      } catch (partialError) {
+        console.warn('NFO 局部更新失败，改为全量写入:', partialError.message);
+        await writeNfoFile(nfoPath, movieData);
+      }
       
       // 如果实时同步已禁用，临时监听该文件夹的NFO文件变化（5秒）
       const enableRealtimeSync = settingsStore.get('enableRealtimeSync', true);
@@ -730,13 +735,35 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         return { success: false, message: '找不到文件所在文件夹' };
       }
       
-      // 尝试打开文件夹并选中 NFO 文件（如果存在）
-      const nfoPath = path.join(folderPath, 'movie.nfo');
-      if (await fs.pathExists(nfoPath)) {
-        // 如果 NFO 文件存在，在文件管理器中显示并选中它
-        shell.showItemInFolder(nfoPath);
+      // 尝试根据数据库中的 nfo_path 找到实际的 NFO 文件（支持任意文件名）
+      let nfoFullPath = null;
+      if (movie.nfo_path) {
+        for (const dp of dataPaths) {
+          const testPath = path.join(dp, movie.nfo_path);
+          if (await fs.pathExists(testPath)) {
+            nfoFullPath = testPath;
+            break;
+          }
+        }
+      }
+
+      // 如果通过 nfo_path 没找到，则在影片文件夹中查找任意 .nfo 文件
+      if (!nfoFullPath) {
+        try {
+          const files = await fs.readdir(folderPath);
+          const nfoFile = files.find(f => path.extname(f).toLowerCase() === '.nfo');
+          if (nfoFile) {
+            nfoFullPath = path.join(folderPath, nfoFile);
+          }
+        } catch (e) {
+          console.error('读取文件夹内容失败:', e);
+        }
+      }
+
+      // 如果找到 NFO 文件，在文件管理器中显示并选中它，否则直接打开文件夹
+      if (nfoFullPath && await fs.pathExists(nfoFullPath)) {
+        shell.showItemInFolder(nfoFullPath);
       } else {
-        // 如果 NFO 文件不存在，直接打开文件夹
         await shell.openPath(folderPath);
       }
       
@@ -1957,7 +1984,8 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         }
         try {
           const glob = require('fast-glob');
-          const nfoFiles = await glob('**/movie.nfo', {
+          // 通过 .nfo 后缀匹配所有 NFO 文件，而不限制文件名
+          const nfoFiles = await glob('**/*.nfo', {
             cwd: dataPath,
             absolute: true,
             ignore: ['**/node_modules/**']

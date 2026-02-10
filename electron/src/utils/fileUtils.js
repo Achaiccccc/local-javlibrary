@@ -9,7 +9,7 @@ const fs = require('fs-extra');
 async function getNfoFiles(folderPath) {
   const files = await fs.readdir(folderPath);
   return files
-    .filter(file => file.toLowerCase() === 'movie.nfo')
+    .filter(file => path.extname(file).toLowerCase() === '.nfo')
     .map(file => path.join(folderPath, file));
 }
 
@@ -23,13 +23,48 @@ async function getImagePaths(folderPath) {
   
   let poster = null;
   let fanart = null;
-  
+
+  // 支持的图片扩展名
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+  // 使用优先级控制：ps/pl 命名优先，其次是 poster/fanart 默认命名
+  // poster: 2 = *ps.*, 1 = poster.*, 0 = 未匹配
+  // fanart: 2 = *pl.*, 1 = fanart.*, 0 = 未匹配
+  let posterPriority = 0;
+  let fanartPriority = 0;
+
   for (const file of files) {
+    const ext = path.extname(file).toLowerCase();
+    if (!imageExtensions.includes(ext)) {
+      continue;
+    }
+
     const lowerFile = file.toLowerCase();
-    if (lowerFile === 'poster.jpg' || lowerFile === 'poster.png') {
-      poster = path.join(folderPath, file);
-    } else if (lowerFile === 'fanart.jpg' || lowerFile === 'fanart.png') {
-      fanart = path.join(folderPath, file);
+    const nameWithoutExt = path.basename(lowerFile, ext);
+
+    // 封面图：优先识别 *ps.(jpg|png|webp...)，其次是 poster.(jpg|png...)
+    if (nameWithoutExt.endsWith('ps')) {
+      if (posterPriority < 2) {
+        posterPriority = 2;
+        poster = path.join(folderPath, file);
+      }
+    } else if (nameWithoutExt === 'poster') {
+      if (posterPriority < 1) {
+        posterPriority = 1;
+        poster = path.join(folderPath, file);
+      }
+    }
+
+    // 海报图 / 背景图：优先识别 *pl.(jpg|png|webp...)，其次是 fanart.(jpg|png...)
+    if (nameWithoutExt.endsWith('pl')) {
+      if (fanartPriority < 2) {
+        fanartPriority = 2;
+        fanart = path.join(folderPath, file);
+      }
+    } else if (nameWithoutExt === 'fanart') {
+      if (fanartPriority < 1) {
+        fanartPriority = 1;
+        fanart = path.join(folderPath, file);
+      }
     }
   }
   
@@ -37,14 +72,14 @@ async function getImagePaths(folderPath) {
 }
 
 /**
- * 检查文件夹是否为作品文件夹（包含movie.nfo）
+ * 检查文件夹是否为作品文件夹（包含至少一个 .nfo 文件）
  * @param {string} folderPath - 文件夹路径
  * @returns {Promise<boolean>} - 是否为作品文件夹
  */
 async function isMovieFolder(folderPath) {
   try {
-    const nfoPath = path.join(folderPath, 'movie.nfo');
-    return await fs.pathExists(nfoPath);
+    const nfoFiles = await getNfoFiles(folderPath);
+    return nfoFiles.length > 0;
   } catch {
     return false;
   }

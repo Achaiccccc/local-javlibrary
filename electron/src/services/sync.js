@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { scanDataFolder } = require('./scanner');
 const { parseNfoFile } = require('../utils/xmlParser');
-const { getImagePaths, isMovieFolder, checkVideoFile } = require('../utils/fileUtils');
+const { getNfoFiles, getImagePaths, isMovieFolder, checkVideoFile } = require('../utils/fileUtils');
 const { getSequelize } = require('../config/database');
 
 let watchers = [];
@@ -34,13 +34,14 @@ async function initFileWatcher(dataPaths, mainWindow) {
         /(^|[\/\\])\../, // 忽略隐藏文件
         /node_modules/, // 忽略 node_modules
         /\.git/, // 忽略 .git
-        // 忽略所有非 NFO 文件（使用正则匹配文件扩展名）
+        // 忽略常见的非 NFO 文件（使用正则匹配文件扩展名）
         /\.(jpg|jpeg|png|gif|bmp|webp|mp4|mkv|avi|mov|wmv|flv|webm|m4v|3gp|ts|mpg|mpeg|txt|log|tmp|bak|swp)$/i,
-        // 只保留以 movie.nfo 结尾的文件
+        // 只保留 .nfo 结尾的文件（任意文件名）
         (filePath) => {
           const lowerPath = filePath.toLowerCase();
-          // 如果是文件且有扩展名，但不是 movie.nfo，则忽略
-          if (path.extname(lowerPath) && !lowerPath.endsWith('movie.nfo')) {
+          const ext = path.extname(lowerPath);
+          // 如果是文件且有扩展名，但不是 .nfo，则忽略
+          if (ext && ext !== '.nfo') {
             return true;
           }
           return false;
@@ -104,7 +105,7 @@ async function initFileWatcher(dataPaths, mainWindow) {
 
   // 监听NFO文件变化
   watcher.on('change', async (filePath) => {
-    if (filePath.toLowerCase().endsWith('movie.nfo')) {
+    if (path.extname(filePath).toLowerCase() === '.nfo') {
       console.log('NFO文件变化:', filePath);
       try {
         const folderPath = path.dirname(filePath);
@@ -182,11 +183,15 @@ async function watchFolderTemporarily(folderPath, mainWindow, timeout = 5000) {
   if (!dataPath) {
     return;
   }
+
+  // 查找该文件夹下的所有 NFO 文件
+  const nfoFiles = await getNfoFiles(folderPath);
+  if (!nfoFiles || nfoFiles.length === 0) {
+    return;
+  }
   
-  const nfoPath = path.join(folderPath, 'movie.nfo');
-  
-  // 创建临时监听器
-  const tempWatcher = chokidar.watch(nfoPath, {
+  // 创建临时监听器（可能同时监听多个 NFO 文件）
+  const tempWatcher = chokidar.watch(nfoFiles, {
     persistent: false,
     ignoreInitial: true,
     usePolling: false
@@ -229,8 +234,13 @@ async function handleNewMovie(movieFolderPath, dataPath) {
   const Studio = sequelize.models.Studio;
   const Director = sequelize.models.Director;
 
-  // 解析NFO文件
-  const nfoPath = path.join(movieFolderPath, 'movie.nfo');
+  // 解析NFO文件：支持任意文件名，只要是 .nfo 后缀
+  const nfoFiles = await getNfoFiles(movieFolderPath);
+  if (!nfoFiles || nfoFiles.length === 0) {
+    console.warn('handleNewMovie: 未找到 NFO 文件，跳过', movieFolderPath);
+    return;
+  }
+  const nfoPath = nfoFiles[0];
   const movieData = await parseNfoFile(nfoPath);
   
   // 获取图片路径
@@ -348,8 +358,13 @@ async function handleMovieUpdate(movieFolderPath, dataPath) {
   const Studio = sequelize.models.Studio;
   const Director = sequelize.models.Director;
   
-  // 解析NFO文件
-  const nfoPath = path.join(movieFolderPath, 'movie.nfo');
+  // 解析NFO文件：支持任意文件名，只要是 .nfo 后缀
+  const nfoFiles = await getNfoFiles(movieFolderPath);
+  if (!nfoFiles || nfoFiles.length === 0) {
+    console.warn('handleMovieUpdate: 未找到 NFO 文件，跳过', movieFolderPath);
+    return;
+  }
+  const nfoPath = nfoFiles[0];
   const movieData = await parseNfoFile(nfoPath);
   
   // 获取图片路径

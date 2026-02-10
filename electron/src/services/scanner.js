@@ -113,7 +113,8 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
   try {
     // 先统计总数（用于进度计算）
     console.log('开始统计文件总数...');
-    const allNfoFiles = await glob('**/movie.nfo', {
+    // 通过 .nfo 后缀匹配所有 NFO 文件，而不限制文件名
+    const allNfoFiles = await glob('**/*.nfo', {
       cwd: dataPath,
       absolute: true,
       ignore: ['**/node_modules/**']
