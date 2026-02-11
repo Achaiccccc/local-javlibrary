@@ -11,6 +11,16 @@ const backgroundQueue = []; // 后台加载队列
 const priorityQueue = []; // 优先级队列（用户请求的图片）
 
 /**
+ * 图片缓存 key：同一相对路径在不同 data 根下需区分，避免多数据路径时封面互相覆盖
+ * @param {string} posterPath - 相对路径
+ * @param {number} dataPathIndex - 数据路径索引
+ * @returns {string}
+ */
+export function getImageCacheKey(posterPath, dataPathIndex = 0) {
+  return `${dataPathIndex}:${posterPath || ''}`;
+}
+
+/**
  * 暂停后台图片加载
  */
 export function pauseBackgroundLoading() {
@@ -41,8 +51,9 @@ export function resumeBackgroundLoading() {
  * @returns {Promise<string|null>} - 返回图片URL或null
  */
 export async function loadImage(posterPath, dataPathIndex = 0, isPriority = false, imageCache = {}) {
-  if (!posterPath || imageCache[posterPath]) {
-    return imageCache[posterPath] || null;
+  const cacheKey = getImageCacheKey(posterPath, dataPathIndex);
+  if (!posterPath || imageCache[cacheKey]) {
+    return imageCache[cacheKey] || null;
   }
   
   // 如果是优先级请求，立即处理（不受暂停和并发限制影响）
@@ -51,7 +62,7 @@ export async function loadImage(posterPath, dataPathIndex = 0, isPriority = fals
     try {
       const imageUrl = await window.electronAPI?.movies?.getImage?.(posterPath, dataPathIndex);
       if (imageUrl) {
-        imageCache[posterPath] = imageUrl;
+        imageCache[cacheKey] = imageUrl;
         return imageUrl;
       }
       return null;
@@ -81,11 +92,12 @@ export async function loadImage(posterPath, dataPathIndex = 0, isPriority = fals
  * 立即加载图片（内部方法）
  */
 async function loadImageImmediate(posterPath, dataPathIndex, imageCache) {
+  const cacheKey = getImageCacheKey(posterPath, dataPathIndex);
   currentLoadingCount++;
   try {
     const imageUrl = await window.electronAPI?.movies?.getImage?.(posterPath, dataPathIndex);
     if (imageUrl) {
-      imageCache[posterPath] = imageUrl;
+      imageCache[cacheKey] = imageUrl;
       return imageUrl;
     }
     return null;
@@ -132,8 +144,8 @@ function processQueue() {
  * @param {number} batchSize - 每批加载数量
  */
 export function loadImagesBatch(movies, imageCache, batchSize = 20) {
-  const moviesToLoad = movies.filter(movie => 
-    movie.poster_path && !imageCache[movie.poster_path]
+  const moviesToLoad = movies.filter(movie =>
+    movie.poster_path && !imageCache[getImageCacheKey(movie.poster_path, movie.data_path_index)]
   );
   
   if (moviesToLoad.length === 0) {

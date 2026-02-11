@@ -38,7 +38,7 @@ import { VideoPlay } from '@element-plus/icons-vue';
 import MovieListLayout from '../components/MovieListLayout.vue';
 import { savePageState, getPageState, saveScrollPosition, restoreScrollPosition, clearScrollPosition } from '../utils/pageState';
 import { withLoadingOptimization } from '../utils/loadingOptimizer';
-import { loadImagesBatch, pauseBackgroundLoading } from '../utils/imageLoader';
+import { loadImagesBatch, pauseBackgroundLoading, getImageCacheKey } from '../utils/imageLoader';
 
 const router = useRouter();
 const route = useRoute();
@@ -100,14 +100,15 @@ const loadMoviesRaw = async () => {
 const loadMovies = withLoadingOptimization(loadMoviesRaw);
 
 const loadMovieImage = async (posterPath, dataPathIndex = 0) => {
-  if (!posterPath || imageCache.value[posterPath]) {
+  const cacheKey = getImageCacheKey(posterPath, dataPathIndex);
+  if (!posterPath || imageCache.value[cacheKey]) {
     return;
   }
   
   try {
     const imageUrl = await window.electronAPI?.movies?.getImage?.(posterPath, dataPathIndex);
     if (imageUrl) {
-      imageCache.value[posterPath] = imageUrl;
+      imageCache.value[cacheKey] = imageUrl;
     }
   } catch (error) {
     console.error('加载图片失败:', error);
