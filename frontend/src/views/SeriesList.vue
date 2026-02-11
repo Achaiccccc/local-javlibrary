@@ -33,6 +33,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import MovieListLayout from '../components/MovieListLayout.vue';
+import { getImageCacheKey } from '../utils/imageLoader';
 
 const router = useRouter();
 const route = useRoute();
@@ -64,14 +65,15 @@ const loadMovies = async () => {
 };
 
 const loadMovieImage = async (posterPath, dataPathIndex = 0) => {
-  if (!posterPath || imageCache.value[posterPath]) {
+  const cacheKey = getImageCacheKey(posterPath, dataPathIndex);
+  if (!posterPath || imageCache.value[cacheKey]) {
     return;
   }
   
   try {
     const imageUrl = await window.electronAPI?.movies?.getImage?.(posterPath, dataPathIndex);
     if (imageUrl) {
-      imageCache.value[posterPath] = imageUrl;
+      imageCache.value[cacheKey] = imageUrl;
     }
   } catch (error) {
     console.error('加载图片失败:', error);

@@ -46,6 +46,27 @@ function fixUnescapedAmpersands(content) {
 }
 
 /**
+ * 修复混入元素内容中的 HTML/script 片段，避免被解析为 XML 标签导致 "Unexpected close tag"
+ * 例如：<dmmid>..."])</script><script>...</dmmid> 中的 </script>、<script> 会破坏解析
+ */
+function fixScriptInContent(content) {
+  return content
+    .replace(/<\/script>/gi, '&lt;/script&gt;')
+    .replace(/<script\s*>/gi, '&lt;script&gt;')
+    .replace(/<script\s+/gi, '&lt;script ');
+}
+
+/**
+ * 修复以数字开头的标签名（XML 规范要求标签名以字母/下划线/冒号开头），避免 "Unencoded <" 等解析错误
+ * 例如：<7mmtvid>...</7mmtvid> 改为 <n_7mmtvid>...</n_7mmtvid>，解析后我们并不使用该字段
+ */
+function fixInvalidTagNames(content) {
+  return content
+    .replace(/<(\d[a-zA-Z0-9_-]*)\s*>/g, '<n_$1>')
+    .replace(/<\/(\d[a-zA-Z0-9_-]*)\s*>/g, '</n_$1>');
+}
+
+/**
  * 解析NFO文件
  * @param {string} nfoPath - NFO文件路径
  * @returns {Promise<Object>} - 解析后的电影数据
@@ -70,7 +91,11 @@ async function parseNfoFile(nfoPath) {
     }
     // 修复 URL 等文本中未转义的 &，避免 "Invalid character in entity name" 解析错误
     content = fixUnescapedAmpersands(content);
-    
+    // 修复元素内容中混入的 </script>、<script> 等，避免 "Unexpected close tag"
+    content = fixScriptInContent(content);
+    // 修复以数字开头的标签名（如 <7mmtvid>），避免 "Unencoded <" 等解析错误
+    content = fixInvalidTagNames(content);
+
     // 解析XML
     const parser = new xml2js.Parser({
       explicitArray: false,

@@ -38,7 +38,7 @@ import { VideoPlay } from '@element-plus/icons-vue';
 import MovieListLayout from '../components/MovieListLayout.vue';
 import { savePageState, getPageState, saveScrollPosition, restoreScrollPosition, clearScrollPosition } from '../utils/pageState';
 import { withLoadingOptimization } from '../utils/loadingOptimizer';
-import { loadImagesBatch, pauseBackgroundLoading } from '../utils/imageLoader';
+import { loadImagesBatch, pauseBackgroundLoading, getImageCacheKey } from '../utils/imageLoader';
 
 const router = useRouter();
 const route = useRoute();
@@ -156,14 +156,15 @@ const loadMoviesRaw = async () => {
 const loadMovies = withLoadingOptimization(loadMoviesRaw);
 
 const loadMovieImage = async (posterPath, dataPathIndex = 0) => {
-  if (!posterPath || imageCache.value[posterPath]) {
+  const cacheKey = getImageCacheKey(posterPath, dataPathIndex);
+  if (!posterPath || imageCache.value[cacheKey]) {
     return;
   }
   
   try {
     const imageUrl = await window.electronAPI?.movies?.getImage?.(posterPath, dataPathIndex);
     if (imageUrl) {
-      imageCache.value[posterPath] = imageUrl;
+      imageCache.value[cacheKey] = imageUrl;
     }
   } catch (error) {
     console.error('加载图片失败:', error);
@@ -173,16 +174,17 @@ const loadMovieImage = async (posterPath, dataPathIndex = 0) => {
 const getPosterUrl = async (posterPath, dataPathIndex = 0) => {
   if (!posterPath) return '';
   
+  const cacheKey = getImageCacheKey(posterPath, dataPathIndex);
   // 检查缓存
-  if (imageCache.value[posterPath]) {
-    return imageCache.value[posterPath];
+  if (imageCache.value[cacheKey]) {
+    return imageCache.value[cacheKey];
   }
   
   // 异步加载图片
   try {
     const imageUrl = await window.electronAPI?.movies?.getImage?.(posterPath, dataPathIndex);
     if (imageUrl) {
-      imageCache.value[posterPath] = imageUrl;
+      imageCache.value[cacheKey] = imageUrl;
       return imageUrl;
     }
   } catch (error) {

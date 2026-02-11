@@ -62,6 +62,13 @@ async function initDatabase() {
       } catch (walError) {
         console.warn('启用 WAL 模式失败，使用默认模式:', walError.message);
       }
+      // 设置 busy_timeout：锁等待 30 秒，避免扫描时与前端查询冲突导致 SQLITE_BUSY
+      try {
+        await sequelize.query('PRAGMA busy_timeout = 30000');
+        console.log('SQLite busy_timeout 已设置为 30000ms');
+      } catch (busyError) {
+        console.warn('设置 busy_timeout 失败:', busyError.message);
+      }
     } catch (authError) {
       console.error('数据库连接失败:', authError);
       console.error('错误详情:', authError.message);

@@ -108,8 +108,8 @@ data 文件夹结构示例：
 data/
 ├── 文件夹目录1/
 │   ├── 作品文件夹1/
-│   │   ├── poster.jpg    # 封面（或 *ps.jpg / *ps.png 等）
-│   │   ├── fanart.jpg    # 海报（或 *pl.jpg / *pl.png 等）
+│   │   ├── poster.jpg    # 封面（或 *ps.* / 文件名含 poster，如 MKMP-393-C-poster.jpg）
+│   │   ├── fanart.jpg    # 海报（或 *pl.* / 文件名含 fanart，如 MKMP-393-C-fanart.jpg）
 │   │   ├── xxx.nfo       # 元数据文件（任意 .nfo 后缀均可）
 │   │   └── video.mp4     # 视频文件（可选）
 │   └── ...
@@ -117,7 +117,7 @@ data/
 ```
 
 - **NFO**：支持任意文件名的 `.nfo` 文件，不限于 `movie.nfo`
-- **封面/海报**：支持 `poster.*` / `fanart.*`，以及以 `ps` / `pl` 结尾的图片（如 `gmab008ps.jpg`、`gmab008pl.png`）
+- **封面/海报**：优先识别以 `ps`/`pl` 结尾的图片；其次按关键词匹配，文件名含 `poster` 为封面、含 `fanart` 为海报（支持 `poster.jpg`、`番号-分类-poster.jpg` 等）
 - **识别码**：NFO 中可使用 `<uniqueid>` 或 `<num>` 标签，编辑时按原格式更新
 
 ### 主要功能

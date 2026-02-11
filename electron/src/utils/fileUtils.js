@@ -26,9 +26,9 @@ async function getImagePaths(folderPath) {
 
   // 支持的图片扩展名
   const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
-  // 使用优先级控制：ps/pl 命名优先，其次是 poster/fanart 默认命名
-  // poster: 2 = *ps.*, 1 = poster.*, 0 = 未匹配
-  // fanart: 2 = *pl.*, 1 = fanart.*, 0 = 未匹配
+  // 使用优先级控制：ps/pl 命名优先，其次是含 poster/fanart 关键词的命名（支持刮削器生成的 番号-分类-poster.jpg 等）
+  // poster: 2 = *ps.*, 1 = 文件名含 poster, 0 = 未匹配
+  // fanart: 2 = *pl.*, 1 = 文件名含 fanart, 0 = 未匹配
   let posterPriority = 0;
   let fanartPriority = 0;
 
@@ -41,26 +41,26 @@ async function getImagePaths(folderPath) {
     const lowerFile = file.toLowerCase();
     const nameWithoutExt = path.basename(lowerFile, ext);
 
-    // 封面图：优先识别 *ps.(jpg|png|webp...)，其次是 poster.(jpg|png...)
+    // 封面图：优先识别 *ps.(jpg|png|webp...)，其次为文件名含 poster 关键词（如 MKMP-393-C-poster）
     if (nameWithoutExt.endsWith('ps')) {
       if (posterPriority < 2) {
         posterPriority = 2;
         poster = path.join(folderPath, file);
       }
-    } else if (nameWithoutExt === 'poster') {
+    } else if (nameWithoutExt.includes('poster')) {
       if (posterPriority < 1) {
         posterPriority = 1;
         poster = path.join(folderPath, file);
       }
     }
 
-    // 海报图 / 背景图：优先识别 *pl.(jpg|png|webp...)，其次是 fanart.(jpg|png...)
+    // 海报图 / 背景图：优先识别 *pl.(jpg|png|webp...)，其次为文件名含 fanart 关键词（如 MKMP-393-C-fanart）
     if (nameWithoutExt.endsWith('pl')) {
       if (fanartPriority < 2) {
         fanartPriority = 2;
         fanart = path.join(folderPath, file);
       }
-    } else if (nameWithoutExt === 'fanart') {
+    } else if (nameWithoutExt.includes('fanart')) {
       if (fanartPriority < 1) {
         fanartPriority = 1;
         fanart = path.join(folderPath, file);

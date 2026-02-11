@@ -72,7 +72,7 @@
         >
           <div class="movie-poster">
             <el-image
-              :src="imageCache?.[movie?.poster_path] || ''"
+              :src="imageCache?.[getImageCacheKey(movie?.poster_path, movie?.data_path_index)] || ''"
               fit="contain"
               style="width: 100%; height: 100%;"
               :lazy="true"
@@ -114,6 +114,7 @@
 <script setup>
 import { computed } from 'vue';
 import { VideoPlay } from '@element-plus/icons-vue';
+import { getImageCacheKey } from '../utils/imageLoader';
 
 const props = defineProps({
   loading: { type: Boolean, default: false },
