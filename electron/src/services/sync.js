@@ -5,9 +5,16 @@ const { scanDataFolder } = require('./scanner');
 const { parseNfoFile } = require('../utils/xmlParser');
 const { getNfoFiles, getImagePaths, isMovieFolder, checkVideoFile } = require('../utils/fileUtils');
 const { getSequelize } = require('../config/database');
+const { Op } = require('sequelize');
 
 let watchers = [];
 let isWatching = false; // 监听状态标志
+// 新增 .nfo 防抖：同一作品目录在短时间内的多次 add 只处理一次
+const addNfoDebounceMap = new Map();
+const ADD_NFO_DEBOUNCE_MS = 400;
+// addDir 延迟重试：目录刚出现时可能还在写入，延迟后再判断一次
+const addDirRetryMap = new Map();
+const ADD_DIR_RETRY_MS = 2500;
 
 /**
  * 初始化文件监听（支持多个路径）
@@ -25,9 +32,10 @@ async function initFileWatcher(dataPaths, mainWindow) {
   const paths = Array.isArray(dataPaths) ? dataPaths : [dataPaths];
   
   // 为每个路径创建监听器
-  for (const dataPath of paths) {
+  for (let dataPathIndex = 0; dataPathIndex < paths.length; dataPathIndex++) {
+    const dataPath = paths[dataPathIndex];
     if (!dataPath) continue;
-    
+
     const watcher = chokidar.watch(dataPath, {
       // 忽略不需要的文件和目录
       ignored: [
@@ -49,8 +57,8 @@ async function initFileWatcher(dataPaths, mainWindow) {
       ],
       persistent: true,
       ignoreInitial: true,
-      // 只监听目录变化，不监听文件变化（除了 NFO 文件通过 change 事件处理）
-      depth: 3, // 进一步减少监听深度（从5降到3）
+      // 监听足够深的目录层级，支持「数据根/多级分类/演员/作品」等 2～3 层目录一次性移入
+      depth: 6,
       // 不使用轮询模式（使用系统原生监听，性能更好）
       // 如果系统不支持原生监听，chokidar 会自动降级到轮询
       usePolling: false,
@@ -65,60 +73,114 @@ async function initFileWatcher(dataPaths, mainWindow) {
       atomic: true // 使用原子操作，减少文件句柄使用
     });
     
-    // 监听新增文件夹（新女优或新作品）
+    // 监听新增文件夹（新女优或新作品，或整层目录移入）
     watcher.on('addDir', async (dirPath) => {
       console.log('新增文件夹:', dirPath);
       try {
-        // 检查是否为作品文件夹
         if (await isMovieFolder(dirPath)) {
-        // 处理新增作品
-        await handleNewMovie(dirPath, dataPath);
+          await handleNewMovie(dirPath, dataPath, dataPathIndex);
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('file:changed', { type: 'movie_added', path: dirPath });
           }
-      } else {
-        // 可能是新女优文件夹，扫描该文件夹下的所有作品
-        await scanActorFolder(dirPath, dataPath);
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('file:changed', { type: 'actor_added', path: dirPath });
+          return;
+        }
+        // 可能是新女优/分类文件夹，扫描其下所有作品
+        await scanActorFolder(dirPath, dataPath, dataPathIndex);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('file:changed', { type: 'actor_added', path: dirPath });
+        }
+        // 若当前没有子目录（例如整包还在复制中），延迟重试一次，避免漏掉「先建目录再拷文件」
+        const existing = addDirRetryMap.get(dirPath);
+        if (existing) clearTimeout(existing);
+        const tid = setTimeout(async () => {
+          addDirRetryMap.delete(dirPath);
+          try {
+            if (!isWatching) return;
+            if (await isMovieFolder(dirPath)) {
+              await handleNewMovie(dirPath, dataPath, dataPathIndex);
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('file:changed', { type: 'movie_added', path: dirPath });
+              }
+              return;
+            }
+            await scanActorFolder(dirPath, dataPath, dataPathIndex);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('file:changed', { type: 'actor_added', path: dirPath });
+            }
+          } catch (e) {
+            console.error('addDir 延迟重试失败:', e);
           }
+        }, ADD_DIR_RETRY_MS);
+        addDirRetryMap.set(dirPath, tid);
+      } catch (error) {
+        console.error('处理新增文件夹失败:', error);
       }
-    } catch (error) {
-      console.error('处理新增文件夹失败:', error);
-        // 不抛出错误，避免未处理的 Promise 拒绝
-    }
-  });
+    });
 
   // 监听删除文件夹
   watcher.on('unlinkDir', async (dirPath) => {
     console.log('删除文件夹:', dirPath);
     try {
-      await handleDeletedFolder(dirPath, dataPath);
+      await handleDeletedFolder(dirPath, dataPath, dataPathIndex);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('file:changed', { type: 'folder_deleted', path: dirPath });
       }
     } catch (error) {
       console.error('处理删除文件夹失败:', error);
-      // 不抛出错误，避免未处理的 Promise 拒绝
     }
   });
 
-  // 监听NFO文件变化
+  // 监听删除 NFO 文件：仅删除 .nfo 时也从库中移除对应影片
+  watcher.on('unlink', (filePath) => {
+    if (path.extname(filePath).toLowerCase() !== '.nfo') return;
+    const folderPath = path.dirname(filePath);
+    console.log('删除NFO文件，尝试从库移除对应影片:', filePath);
+    handleDeletedFolder(folderPath, dataPath, dataPathIndex)
+      .then((removed) => {
+        if (removed && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('file:changed', { type: 'folder_deleted', path: folderPath });
+        }
+      })
+      .catch((error) => console.error('处理删除NFO失败:', error));
+  });
+
+  // 监听 NFO 文件内容变化（修改）
   watcher.on('change', async (filePath) => {
     if (path.extname(filePath).toLowerCase() === '.nfo') {
       console.log('NFO文件变化:', filePath);
       try {
         const folderPath = path.dirname(filePath);
-        await handleMovieUpdate(folderPath, dataPath);
+        await handleMovieUpdate(folderPath, dataPath, dataPathIndex);
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('file:changed', { type: 'movie_updated', path: folderPath });
         }
       } catch (error) {
         console.error('处理NFO文件变化失败:', error);
-        // 不抛出错误，避免未处理的 Promise 拒绝
       }
     }
-    });
+  });
+
+  // 监听新增 NFO 文件：先建空文件夹再拷入 nfo 时，靠此事件入库
+  watcher.on('add', (filePath) => {
+    if (path.extname(filePath).toLowerCase() !== '.nfo') return;
+    const folderPath = path.dirname(filePath);
+    const existing = addNfoDebounceMap.get(folderPath);
+    if (existing) clearTimeout(existing);
+    const tid = setTimeout(async () => {
+      addNfoDebounceMap.delete(folderPath);
+      if (!isWatching) return;
+      console.log('新增NFO文件，尝试入库:', filePath);
+      try {
+        await handleMovieUpdate(folderPath, dataPath, dataPathIndex);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('file:changed', { type: 'movie_added', path: folderPath });
+        }
+      } catch (error) {
+        console.error('处理新增NFO失败:', error);
+      }
+    }, ADD_NFO_DEBOUNCE_MS);
+    addNfoDebounceMap.set(folderPath, tid);
+  });
   
   // 添加错误处理，避免未处理的 Promise 拒绝
   watcher.on('error', (error) => {
@@ -141,6 +203,11 @@ async function initFileWatcher(dataPaths, mainWindow) {
  */
 async function stopFileWatcher() {
   console.log('停止文件监听器...');
+  isWatching = false;
+  addNfoDebounceMap.forEach((tid) => clearTimeout(tid));
+  addNfoDebounceMap.clear();
+  addDirRetryMap.forEach((tid) => clearTimeout(tid));
+  addDirRetryMap.clear();
   watchers.forEach(watcher => {
     if (watcher) {
       try {
@@ -151,7 +218,6 @@ async function stopFileWatcher() {
     }
   });
   watchers = [];
-  isWatching = false;
   console.log('文件监听器已停止');
 }
 
@@ -171,18 +237,17 @@ async function watchFolderTemporarily(folderPath, mainWindow, timeout = 5000) {
     return;
   }
   
-  // 找到对应的数据路径
+  // 找到对应的数据路径及索引
   let dataPath = null;
-  for (const dp of dataPaths) {
-    if (folderPath.startsWith(dp)) {
-      dataPath = dp;
+  let dataPathIndex = 0;
+  for (let i = 0; i < dataPaths.length; i++) {
+    if (folderPath.startsWith(dataPaths[i])) {
+      dataPath = dataPaths[i];
+      dataPathIndex = i;
       break;
     }
   }
-  
-  if (!dataPath) {
-    return;
-  }
+  if (!dataPath) return;
 
   // 查找该文件夹下的所有 NFO 文件
   const nfoFiles = await getNfoFiles(folderPath);
@@ -201,7 +266,7 @@ async function watchFolderTemporarily(folderPath, mainWindow, timeout = 5000) {
   tempWatcher.on('change', async (filePath) => {
     console.log('临时监听：NFO文件变化:', filePath);
     try {
-      await handleMovieUpdate(folderPath, dataPath);
+      await handleMovieUpdate(folderPath, dataPath, dataPathIndex);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('file:changed', { type: 'movie_updated', path: folderPath });
       }
@@ -225,8 +290,11 @@ async function watchFolderTemporarily(folderPath, mainWindow, timeout = 5000) {
 
 /**
  * 处理新增作品
+ * @param {string} movieFolderPath - 作品目录绝对路径
+ * @param {string} dataPath - 数据根路径
+ * @param {number} dataPathIndex - 数据路径索引（多路径时必填，用于 data_path_index 字段）
  */
-async function handleNewMovie(movieFolderPath, dataPath) {
+async function handleNewMovie(movieFolderPath, dataPath, dataPathIndex = 0) {
   const sequelize = getSequelize();
   const ActorFromNfo = sequelize.models.ActorFromNfo;
   const Movie = sequelize.models.Movie;
@@ -234,7 +302,6 @@ async function handleNewMovie(movieFolderPath, dataPath) {
   const Studio = sequelize.models.Studio;
   const Director = sequelize.models.Director;
 
-  // 解析NFO文件：支持任意文件名，只要是 .nfo 后缀
   const nfoFiles = await getNfoFiles(movieFolderPath);
   if (!nfoFiles || nfoFiles.length === 0) {
     console.warn('handleNewMovie: 未找到 NFO 文件，跳过', movieFolderPath);
@@ -242,14 +309,10 @@ async function handleNewMovie(movieFolderPath, dataPath) {
   }
   const nfoPath = nfoFiles[0];
   const movieData = await parseNfoFile(nfoPath);
-  
-  // 获取图片路径
+
   const { poster, fanart } = await getImagePaths(movieFolderPath);
-  
-  // 检查是否有视频文件
   const { playable, videoPath } = await checkVideoFile(movieFolderPath);
-  
-  // 获取或创建导演（"----" 表示空值）
+
   let director = null;
   if (movieData.director && movieData.director.trim() !== '' && movieData.director.trim() !== '----') {
     [director] = await Director.findOrCreate({
@@ -257,8 +320,7 @@ async function handleNewMovie(movieFolderPath, dataPath) {
       defaults: { name: movieData.director }
     });
   }
-  
-  // 获取或创建制作商（"----" 表示空值）
+
   let studio = null;
   if (movieData.studio && movieData.studio.trim() !== '' && movieData.studio.trim() !== '----') {
     [studio] = await Studio.findOrCreate({
@@ -266,8 +328,7 @@ async function handleNewMovie(movieFolderPath, dataPath) {
       defaults: { name: movieData.studio }
     });
   }
-  
-  // 创建影片
+
   const [movie, created] = await Movie.findOrCreate({
     where: { code: movieData.code },
     defaults: {
@@ -282,11 +343,11 @@ async function handleNewMovie(movieFolderPath, dataPath) {
       nfo_path: path.relative(dataPath, nfoPath),
       folder_path: path.relative(dataPath, movieFolderPath),
       playable: playable,
-      video_path: videoPath ? path.relative(dataPath, videoPath) : null
+      video_path: videoPath ? path.relative(dataPath, videoPath) : null,
+      data_path_index: dataPathIndex
     }
   });
-  
-  // 如果不是新创建的，更新数据（包括playable和video_path）
+
   if (!created) {
     await movie.update({
       title: movieData.title,
@@ -299,15 +360,14 @@ async function handleNewMovie(movieFolderPath, dataPath) {
       nfo_path: path.relative(dataPath, nfoPath),
       folder_path: path.relative(dataPath, movieFolderPath),
       playable: playable,
-      video_path: videoPath ? path.relative(dataPath, videoPath) : null
+      video_path: videoPath ? path.relative(dataPath, videoPath) : null,
+      data_path_index: dataPathIndex
     });
   }
-  
-  // 先清除旧的关联关系
+
   await movie.setActorsFromNfo([]);
   await movie.setGenres([]);
-  
-  // 处理NFO文件中的演员（所有演员数据均来自NFO）
+
   if (movieData.actors && Array.isArray(movieData.actors)) {
     for (const actorName of movieData.actors) {
       if (!actorName) continue;
@@ -318,47 +378,52 @@ async function handleNewMovie(movieFolderPath, dataPath) {
       await movie.addActorsFromNfo(nfoActor);
     }
   }
-  
-  // 处理分类
-  for (const genreName of movieData.genres) {
-    if (!genreName) continue;
-    const [genre] = await Genre.findOrCreate({
-      where: { name: genreName },
-      defaults: { name: genreName }
-    });
-    await movie.addGenre(genre);
+
+  if (movieData.genres && Array.isArray(movieData.genres)) {
+    for (const genreName of movieData.genres) {
+      if (!genreName) continue;
+      const [genre] = await Genre.findOrCreate({
+        where: { name: genreName },
+        defaults: { name: genreName }
+      });
+      await movie.addGenre(genre);
+    }
   }
 }
 
 /**
- * 扫描演员文件夹
+ * 扫描演员/分类文件夹下的作品并入库
+ * @param {string} actorFolderPath - 演员或分类目录绝对路径
+ * @param {string} dataPath - 数据根路径
+ * @param {number} dataPathIndex - 数据路径索引
  */
-async function scanActorFolder(actorFolderPath, dataPath) {
+async function scanActorFolder(actorFolderPath, dataPath, dataPathIndex = 0) {
   const fs = require('fs-extra');
   const entries = await fs.readdir(actorFolderPath, { withFileTypes: true });
-  
   for (const entry of entries) {
     if (entry.isDirectory()) {
       const movieFolderPath = path.join(actorFolderPath, entry.name);
       if (await isMovieFolder(movieFolderPath)) {
-        await handleNewMovie(movieFolderPath, dataPath);
+        await handleNewMovie(movieFolderPath, dataPath, dataPathIndex);
       }
     }
   }
 }
 
 /**
- * 处理影片更新
+ * 处理影片更新（NFO 变更或新增后补全）
+ * @param {string} movieFolderPath - 作品目录绝对路径
+ * @param {string} dataPath - 数据根路径
+ * @param {number} dataPathIndex - 数据路径索引
  */
-async function handleMovieUpdate(movieFolderPath, dataPath) {
+async function handleMovieUpdate(movieFolderPath, dataPath, dataPathIndex = 0) {
   const sequelize = getSequelize();
   const ActorFromNfo = sequelize.models.ActorFromNfo;
   const Movie = sequelize.models.Movie;
   const Genre = sequelize.models.Genre;
   const Studio = sequelize.models.Studio;
   const Director = sequelize.models.Director;
-  
-  // 解析NFO文件：支持任意文件名，只要是 .nfo 后缀
+
   const nfoFiles = await getNfoFiles(movieFolderPath);
   if (!nfoFiles || nfoFiles.length === 0) {
     console.warn('handleMovieUpdate: 未找到 NFO 文件，跳过', movieFolderPath);
@@ -366,22 +431,16 @@ async function handleMovieUpdate(movieFolderPath, dataPath) {
   }
   const nfoPath = nfoFiles[0];
   const movieData = await parseNfoFile(nfoPath);
-  
-  // 获取图片路径
+
   const { poster, fanart } = await getImagePaths(movieFolderPath);
-  
-  // 检查是否有视频文件
   const { playable, videoPath } = await checkVideoFile(movieFolderPath);
-  
-  // 查找影片
+
   const movie = await Movie.findOne({ where: { code: movieData.code } });
   if (!movie) {
-    // 如果不存在，按新增处理
-    await handleNewMovie(movieFolderPath, dataPath);
+    await handleNewMovie(movieFolderPath, dataPath, dataPathIndex);
     return;
   }
-  
-  // 获取或创建导演（"----" 表示空值）
+
   let director = null;
   if (movieData.director && movieData.director.trim() !== '' && movieData.director.trim() !== '----') {
     [director] = await Director.findOrCreate({
@@ -389,8 +448,7 @@ async function handleMovieUpdate(movieFolderPath, dataPath) {
       defaults: { name: movieData.director }
     });
   }
-  
-  // 获取或创建制作商（"----" 表示空值）
+
   let studio = null;
   if (movieData.studio && movieData.studio.trim() !== '' && movieData.studio.trim() !== '----') {
     [studio] = await Studio.findOrCreate({
@@ -398,8 +456,7 @@ async function handleMovieUpdate(movieFolderPath, dataPath) {
       defaults: { name: movieData.studio }
     });
   }
-  
-  // 更新影片
+
   await movie.update({
     title: movieData.title,
     runtime: movieData.runtime,
@@ -411,10 +468,10 @@ async function handleMovieUpdate(movieFolderPath, dataPath) {
     nfo_path: path.relative(dataPath, nfoPath),
     folder_path: path.relative(dataPath, movieFolderPath),
     playable: playable,
-    video_path: videoPath ? path.relative(dataPath, videoPath) : null
+    video_path: videoPath ? path.relative(dataPath, videoPath) : null,
+    data_path_index: dataPathIndex
   });
-  
-  // 更新NFO文件中的演员（所有演员数据均来自NFO）
+
   await movie.setActorsFromNfo([]);
   if (movieData.actors && Array.isArray(movieData.actors)) {
     for (const nfoActorName of movieData.actors) {
@@ -426,38 +483,71 @@ async function handleMovieUpdate(movieFolderPath, dataPath) {
       await movie.addActorsFromNfo(nfoActor);
     }
   }
-  
-  // 更新分类
-  await movie.setGenres([]); // 清空现有分类
-  for (const genreName of movieData.genres) {
-    if (!genreName) continue;
-    const [genre] = await Genre.findOrCreate({
-      where: { name: genreName },
-      defaults: { name: genreName }
-    });
-    await movie.addGenre(genre);
+
+  await movie.setGenres([]);
+  if (movieData.genres && Array.isArray(movieData.genres)) {
+    for (const genreName of movieData.genres) {
+      if (!genreName) continue;
+      const [genre] = await Genre.findOrCreate({
+        where: { name: genreName },
+        defaults: { name: genreName }
+      });
+      await movie.addGenre(genre);
+    }
   }
 }
 
 /**
- * 处理删除的文件夹
+ * 规范化相对路径，便于与库中 folder_path 比较（Windows 与 Linux 可能存 \ 或 /）
  */
-async function handleDeletedFolder(dirPath, dataPath) {
+function normalizeFolderPath(relativePath) {
+  return relativePath ? relativePath.replace(/\\/g, '/') : '';
+}
+
+/**
+ * 处理删除的文件夹或作品目录（含：整目录删除、仅删除 .nfo 文件）
+ * @param {string} dirPath - 被删目录的绝对路径（或 .nfo 所在目录）
+ * @param {string} dataPath - 数据根路径
+ * @param {number} dataPathIndex - 数据路径索引，多路径时用于精确匹配
+ * @returns {Promise<boolean>} - 是否删除了至少一条影片记录
+ */
+async function handleDeletedFolder(dirPath, dataPath, dataPathIndex = 0) {
   const sequelize = getSequelize();
   const Movie = sequelize.models.Movie;
-  
-  // 查找相关的影片记录
+  const MovieActorFromNfo = sequelize.models.MovieActorFromNfo;
+  const MovieGenre = sequelize.models.MovieGenre;
+  const MovieActor = sequelize.models.MovieActor;
+
   const relativePath = path.relative(dataPath, dirPath);
+  const normalized = normalizeFolderPath(relativePath);
+  const normalizedBackslash = normalized.replace(/\//g, '\\');
+
   const movies = await Movie.findAll({
     where: {
-      folder_path: relativePath
+      data_path_index: dataPathIndex,
+      [Op.or]: [
+        { folder_path: relativePath },
+        { folder_path: normalized },
+        { folder_path: normalizedBackslash }
+      ]
     }
   });
-  
-  // 删除影片记录（关联的演员和分类会自动处理）
+
   for (const movie of movies) {
+    const movieId = movie.id;
+    // 先删除关联表记录，避免外键约束导致 DELETE movies 失败（SQLite 表可能未建 ON DELETE CASCADE）
+    if (MovieActorFromNfo) {
+      await MovieActorFromNfo.destroy({ where: { movie_id: movieId } });
+    }
+    if (MovieGenre) {
+      await MovieGenre.destroy({ where: { movie_id: movieId } });
+    }
+    if (MovieActor) {
+      await MovieActor.destroy({ where: { movie_id: movieId } });
+    }
     await movie.destroy();
   }
+  return movies.length > 0;
 }
 
 module.exports = {
