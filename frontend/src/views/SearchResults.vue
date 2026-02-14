@@ -22,8 +22,8 @@
           :load-movie-image="(movie) => loadMovieImage(movie.poster_path, movie.data_path_index)"
           @update:pageSize="handlePageSizeChange"
           @update:currentPage="handlePageChange"
-          @update:sortBy="val => (sortBy = val)"
-          @update:viewMode="val => { displayViewMode = val; handleViewModeChange(); }"
+          @update:sortBy="handleSortByChange"
+          @update:viewMode="handleViewModeChangeWithVal"
           @rowClick="goToMovieDetail"
         >
           <template #left-extra>
@@ -56,6 +56,14 @@ const sortBy = ref('premiered-desc');
 const displayViewMode = ref('thumbnail');
 const imageCache = ref({});
 
+function handleSortByChange(val) {
+  sortBy.value = val;
+}
+function handleViewModeChangeWithVal(val) {
+  displayViewMode.value = val;
+  handleViewModeChange();
+}
+
 const displayedMovies = computed(() => {
   let result = [...movies.value];
   
@@ -69,6 +77,18 @@ const displayedMovies = computed(() => {
       const dateA = a.premiered || '';
       const dateB = b.premiered || '';
       return dateA.localeCompare(dateB);
+    });
+  } else if (sortBy.value === 'folder_updated_at-asc') {
+    result.sort((a, b) => {
+      const tA = a.folder_updated_at ? new Date(a.folder_updated_at).getTime() : 0;
+      const tB = b.folder_updated_at ? new Date(b.folder_updated_at).getTime() : 0;
+      return tA - tB;
+    });
+  } else if (sortBy.value === 'folder_updated_at-desc') {
+    result.sort((a, b) => {
+      const tA = a.folder_updated_at ? new Date(a.folder_updated_at).getTime() : 0;
+      const tB = b.folder_updated_at ? new Date(b.folder_updated_at).getTime() : 0;
+      return tB - tA;
     });
   } else {
     // premiered-desc (默认)

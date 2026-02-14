@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (id, deleteFile) => ipcRenderer.invoke('movies:delete', id, deleteFile),
     getSeries: (code) => ipcRenderer.invoke('movies:getSeries', code),
     getImage: (path, dataPathIndex) => ipcRenderer.invoke('movies:getImage', path, dataPathIndex),
+    getDetailExtras: (id) => ipcRenderer.invoke('movies:getDetailExtras', id),
     openFileLocation: (id) => ipcRenderer.invoke('movies:openFileLocation', id)
   },
   

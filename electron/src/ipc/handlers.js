@@ -3,7 +3,8 @@ const { getDataPath, getDataPaths, setDataPath, addDataPath, removeDataPath, val
 const { getSequelize } = require('../config/database');
 const { scanDataFolder } = require('../services/scanner');
 const { Op } = require('sequelize');
-const { parseNfoFile, writeNfoFile, updateNfoFilePartial } = require('../utils/xmlParser');
+const { parseNfoFile, writeNfoFile, updateNfoFilePartial, readNfoTagContent } = require('../utils/xmlParser');
+const { getExtraFanartRelativePaths } = require('../utils/fileUtils');
 const path = require('path');
 const fs = require('fs-extra');
 const Store = require('electron-store');
@@ -23,6 +24,17 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   const settingsStore = store || new Store({
     name: process.env.NODE_ENV === 'development' ? 'javlibrary-dev' : 'javlibrary'
   });
+
+  /** 根据 sortBy 参数返回 Sequelize order 数组（支持 premiered/title/folder_updated_at 正序/倒序） */
+  function getOrderFromSortBy(sortBy) {
+    if (sortBy === 'title-asc') return [['title', 'ASC']];
+    if (sortBy === 'title-desc') return [['title', 'DESC']];
+    if (sortBy === 'premiered-asc') return [['premiered', 'ASC']];
+    if (sortBy === 'premiered-desc') return [['premiered', 'DESC']];
+    if (sortBy === 'folder_updated_at-asc') return [['folder_updated_at', 'ASC']];
+    if (sortBy === 'folder_updated_at-desc') return [['folder_updated_at', 'DESC']];
+    return [['premiered', 'DESC']];
+  }
   
   // 注意：所有IPC处理器都将在运行时动态获取模型，确保数据库已初始化
   // 这样可以避免在注册时模型未初始化的问题
@@ -243,19 +255,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         required: false
       });
       
-      // 解析排序参数：支持 "premiered-asc", "premiered-desc", "title-asc", "title-desc"
-      let order;
-      if (sortBy === 'title-asc') {
-        order = [['title', 'ASC']];
-      } else if (sortBy === 'title-desc') {
-        order = [['title', 'DESC']];
-      } else if (sortBy === 'premiered-asc') {
-        order = [['premiered', 'ASC']];
-      } else {
-        // 默认：premiered-desc 或旧的 premiered（向后兼容）
-        order = [['premiered', 'DESC']];
-      }
-      
+      const order = getOrderFromSortBy(sortBy);
       const { count, rows } = await Movie.findAndCountAll({
         where,
         include,
@@ -282,6 +282,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           playable: movie.playable,
           video_path: movie.video_path,
           data_path_index: movie.data_path_index || 0,
+          folder_updated_at: movie.folder_updated_at,
           created_at: movie.created_at,
           updated_at: movie.updated_at
         };
@@ -314,6 +315,10 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       return { success: true, data: moviesData, total: count };
     } catch (error) {
       console.error('获取影片列表失败:', error);
+      const isTableMissing = error.message && /no such table:\s*movies/i.test(error.message);
+      if (isTableMissing) {
+        return { success: false, code: 'DB_NOT_READY', message: '数据库表尚未就绪，请稍候', data: [], total: 0 };
+      }
       return { success: false, message: error.message, data: [], total: 0 };
     }
   });
@@ -371,6 +376,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         playable: movie.playable,
         video_path: movie.video_path,
         data_path_index: movie.data_path_index || 0,
+        folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       };
@@ -409,6 +415,54 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
     } catch (error) {
       console.error('获取影片详情失败:', error);
       return { success: false, message: error.message };
+    }
+  });
+
+  /** 获取详情页扩展数据：NFO 中的 originalplot（作品简介）、预览图列表（详情图 + extrafanart 文件夹内图片） */
+  ipcMain.handle('movies:getDetailExtras', async (event, id) => {
+    try {
+      const sequelize = getSequelize();
+      if (!sequelize || !sequelize.models) {
+        return { success: false, message: '数据库未初始化', data: null };
+      }
+      const movieId = parseInt(id);
+      if (isNaN(movieId)) {
+        return { success: false, message: '无效的影片ID', data: null };
+      }
+      const Movie = sequelize.models.Movie;
+      const movie = await Movie.findByPk(movieId, {
+        attributes: ['folder_path', 'nfo_path', 'poster_path', 'fanart_path', 'data_path_index']
+      });
+      if (!movie || !movie.folder_path) {
+        return { success: true, data: { originalplot: null, previewImagePaths: [] } };
+      }
+      const dataPaths = getDataPaths();
+      const dataPathIndex = movie.data_path_index != null ? movie.data_path_index : 0;
+      const dataPath = dataPaths[dataPathIndex] || dataPaths[0];
+      if (!dataPath) {
+        return { success: true, data: { originalplot: null, previewImagePaths: [] } };
+      }
+      let originalplot = null;
+      if (movie.nfo_path) {
+        const nfoFullPath = path.join(dataPath, movie.nfo_path);
+        try {
+          if (await fs.pathExists(nfoFullPath)) {
+            originalplot = await readNfoTagContent(nfoFullPath, 'originalplot');
+          }
+        } catch (e) {
+          console.error('读取 NFO originalplot 失败:', e);
+        }
+      }
+      const extraPaths = await getExtraFanartRelativePaths(dataPath, movie.folder_path);
+      const mainPath = movie.fanart_path || movie.poster_path;
+      const previewImagePaths = mainPath ? [mainPath, ...extraPaths] : [...extraPaths];
+      return {
+        success: true,
+        data: { originalplot: originalplot || null, previewImagePaths }
+      };
+    } catch (error) {
+      console.error('获取详情扩展数据失败:', error);
+      return { success: false, message: error.message, data: null };
     }
   });
 
@@ -784,6 +838,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           playable: movie.playable,
           video_path: movie.video_path,
           data_path_index: movie.data_path_index || 0,
+          folder_updated_at: movie.folder_updated_at,
           created_at: movie.created_at,
           updated_at: movie.updated_at
         };
@@ -1037,19 +1092,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       const Movie = sequelize.models.Movie;
       const filterPlayable = settingsStore.get('filterPlayable', false);
       const { page = 1, pageSize = 20, sortBy = 'premiered' } = params;
-      
-      // 解析排序参数
-      let order;
-      if (sortBy === 'title-asc') {
-        order = [['title', 'ASC']];
-      } else if (sortBy === 'title-desc') {
-        order = [['title', 'DESC']];
-      } else if (sortBy === 'premiered-asc') {
-        order = [['premiered', 'ASC']];
-      } else {
-        order = [['premiered', 'DESC']];
-      }
-      
+      const order = getOrderFromSortBy(sortBy);
       let actorData;
       let where = {};
       
@@ -1100,6 +1143,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           playable: movie.playable,
           video_path: movie.video_path,
           data_path_index: movie.data_path_index || 0,
+          folder_updated_at: movie.folder_updated_at,
           created_at: movie.created_at,
           updated_at: movie.updated_at
         }));
@@ -1167,6 +1211,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           playable: movie.playable,
           video_path: movie.video_path,
           data_path_index: movie.data_path_index || 0,
+          folder_updated_at: movie.folder_updated_at,
           created_at: movie.created_at,
           updated_at: movie.updated_at
         }));
@@ -1290,18 +1335,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       const Genre = sequelize.models.Genre;
       const filterPlayable = settingsStore.get('filterPlayable', false);
       const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = params;
-      
-      let order;
-      if (sortBy === 'title-asc') {
-        order = [['title', 'ASC']];
-      } else if (sortBy === 'title-desc') {
-        order = [['title', 'DESC']];
-      } else if (sortBy === 'premiered-asc') {
-        order = [['premiered', 'ASC']];
-      } else {
-        order = [['premiered', 'DESC']];
-      }
-      
+      const order = getOrderFromSortBy(sortBy);
       const where = {};
       if (filterPlayable) {
         where.playable = true;
@@ -1338,6 +1372,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         folder_path: movie.folder_path,
         playable: movie.playable,
         video_path: movie.video_path,
+        folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       }));
@@ -1458,18 +1493,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       const Director = sequelize.models.Director;
       const filterPlayable = settingsStore.get('filterPlayable', false);
       const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = params;
-      
-      let order;
-      if (sortBy === 'title-asc') {
-        order = [['title', 'ASC']];
-      } else if (sortBy === 'title-desc') {
-        order = [['title', 'DESC']];
-      } else if (sortBy === 'premiered-asc') {
-        order = [['premiered', 'ASC']];
-      } else {
-        order = [['premiered', 'DESC']];
-      }
-      
+      const order = getOrderFromSortBy(sortBy);
       const where = {
         director_id: parseInt(id)
       };
@@ -1500,6 +1524,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         folder_path: movie.folder_path,
         playable: movie.playable,
         video_path: movie.video_path,
+        folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       }));
@@ -1534,18 +1559,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       const Studio = sequelize.models.Studio;
       const filterPlayable = settingsStore.get('filterPlayable', false);
       const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = params;
-      
-      let order;
-      if (sortBy === 'title-asc') {
-        order = [['title', 'ASC']];
-      } else if (sortBy === 'title-desc') {
-        order = [['title', 'DESC']];
-      } else if (sortBy === 'premiered-asc') {
-        order = [['premiered', 'ASC']];
-      } else {
-        order = [['premiered', 'DESC']];
-      }
-      
+      const order = getOrderFromSortBy(sortBy);
       const studioId = parseInt(id);
       if (isNaN(studioId)) {
         return { success: false, message: '无效的制作商ID', data: [], total: 0 };
@@ -1592,6 +1606,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         folder_path: movie.folder_path,
         playable: movie.playable,
         video_path: movie.video_path,
+        folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       }));
@@ -1719,6 +1734,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         folder_path: movie.folder_path,
         playable: movie.playable,
         video_path: movie.video_path,
+        folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       }));
@@ -1885,6 +1901,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         folder_path: movie.folder_path,
         playable: movie.playable,
         video_path: movie.video_path,
+        folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       }));

@@ -134,9 +134,47 @@ async function checkVideoFile(folderPath) {
   }
 }
 
+/**
+ * 获取作品文件夹中「名称包含 extrafanart 关键词」的子文件夹内所有图片的相对路径
+ * 用于详情页预览图，关键词匹配不区分大小写
+ * @param {string} dataPath - 数据根目录绝对路径
+ * @param {string} folderPathRelative - 作品文件夹相对路径（相对 dataPath）
+ * @returns {Promise<string[]>} - 图片相对路径数组（相对 dataPath），按文件名自然排序
+ */
+async function getExtraFanartRelativePaths(dataPath, folderPathRelative) {
+  const imageExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+  const fullFolderPath = path.join(dataPath, folderPathRelative);
+  let entries;
+  try {
+    entries = await fs.readdir(fullFolderPath, { withFileTypes: true });
+  } catch (err) {
+    return [];
+  }
+  const extraFanartDir = entries.find(
+    (e) => e.isDirectory() && e.name.toLowerCase().includes('extrafanart')
+  );
+  if (!extraFanartDir) return [];
+  const extraDirPath = path.join(fullFolderPath, extraFanartDir.name);
+  let files;
+  try {
+    files = await fs.readdir(extraDirPath);
+  } catch (err) {
+    return [];
+  }
+  const imageFiles = files
+    .filter((f) => imageExtensions.includes(path.extname(f).toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const dataPathNorm = path.normalize(dataPath);
+  return imageFiles.map((f) => {
+    const abs = path.join(extraDirPath, f);
+    return path.relative(dataPathNorm, path.normalize(abs)).replace(/\\/g, '/');
+  });
+}
+
 module.exports = {
   getNfoFiles,
   getImagePaths,
+  getExtraFanartRelativePaths,
   isMovieFolder,
   readImageAsBase64,
   checkVideoFile

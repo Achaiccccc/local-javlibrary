@@ -17,8 +17,8 @@
           :enable-view-mode-toggle="true"
           @update:pageSize="handlePageSizeChange"
           @update:currentPage="handlePageChange"
-          @update:sortBy="val => (sortBy = val)"
-          @update:viewMode="val => { viewMode = val; handleViewModeChange(); }"
+          @update:sortBy="handleSortByChange"
+          @update:viewMode="handleViewModeChangeWithVal"
           @rowClick="goToMovieDetail"
           :load-movie-image="movie => loadMovieImage(movie.poster_path, movie.data_path_index)"
         />
@@ -67,10 +67,20 @@ const loadMoviesRaw = async () => {
       sortBy: sortBy.value
     });
     if (result.success) {
+      const totalCount = result.total || 0;
+      const pageMax = pageSize.value > 0 ? Math.max(1, Math.ceil(totalCount / pageSize.value)) : 1;
+      const needResetToFirstPage = currentPage.value > pageMax && totalCount > 0;
+      if (needResetToFirstPage) {
+        currentPage.value = 1;
+        savePageState(pageKey, { currentPage: 1, pageSize: pageSize.value, sortBy: sortBy.value });
+        return loadMoviesRaw();
+      }
       movies.value = result.data || [];
-      total.value = result.total || 0;
-    // 使用全局图片加载管理器分批加载图片
-    loadImagesBatch(movies.value, imageCache.value, 20);
+      total.value = totalCount;
+      loadImagesBatch(movies.value, imageCache.value, 20);
+    } else if (result.code === 'DB_NOT_READY') {
+      // 数据库表尚未创建（启动竞态），不弹错误，稍后由 database:ready 或轮询触发重载
+      ElMessage.info(result.message || '数据库正在准备中，请稍候');
     } else {
       ElMessage.error('加载影片列表失败: ' + (result.message || '未知错误'));
     }
@@ -119,6 +129,14 @@ const handlePageSizeChange = (size) => {
 const handleViewModeChange = () => {
   // 视图模式切换不需要重新加载数据
 };
+
+function handleSortByChange(val) {
+  sortBy.value = val;
+}
+function handleViewModeChangeWithVal(val) {
+  viewMode.value = val;
+  handleViewModeChange();
+}
 
 // 监听排序变化
 watch(sortBy, (newValue) => {
@@ -192,52 +210,65 @@ onMounted(() => {
     });
   }
   
-  // 先设置数据库就绪事件监听，再尝试加载数据
-  let databaseReady = false;
+  // 先设置数据库就绪事件监听，再尝试加载数据（避免在表未创建时请求导致 no such table: movies）
   let loadMoviesCalled = false;
-  
+  const MAX_POLL_MS = 15000;
+  const POLL_INTERVAL_MS = 400;
+
+  const doLoadMoviesOnce = () => {
+    if (loadMoviesCalled) return;
+    loadMoviesCalled = true;
+    loadMovies();
+  };
+
   const tryLoadMovies = async () => {
     if (loadMoviesCalled) return;
-    
-    // 先检查数据库是否就绪
     try {
       if (window.electronAPI?.system?.isDatabaseReady) {
         const result = await window.electronAPI.system.isDatabaseReady();
         if (result.ready) {
-          loadMoviesCalled = true;
-          loadMovies();
+          doLoadMoviesOnce();
           return;
         }
       }
     } catch (error) {
       console.error('检查数据库就绪状态失败:', error);
     }
-    
-    // 如果检查失败或数据库未就绪，延迟重试
-    if (!loadMoviesCalled) {
-      setTimeout(() => {
-        if (!loadMoviesCalled) {
-          console.log('延迟后尝试加载数据');
-          loadMoviesCalled = true;
-          loadMovies();
+    // 未就绪时启动轮询，避免固定 1.5s 后强制加载（此时表可能仍未创建）
+    const pollStart = Date.now();
+    const pollTimer = setInterval(async () => {
+      if (loadMoviesCalled) {
+        clearInterval(pollTimer);
+        return;
+      }
+      if (Date.now() - pollStart >= MAX_POLL_MS) {
+        clearInterval(pollTimer);
+        console.warn('等待数据库就绪超时，尝试加载');
+        doLoadMoviesOnce();
+        return;
+      }
+      try {
+        if (window.electronAPI?.system?.isDatabaseReady) {
+          const result = await window.electronAPI.system.isDatabaseReady();
+          if (result.ready) {
+            clearInterval(pollTimer);
+            doLoadMoviesOnce();
+          }
         }
-      }, 1500); // 延迟1.5秒，给数据库初始化时间
-    }
+      } catch (e) {
+        // 忽略单次轮询错误
+      }
+    }, POLL_INTERVAL_MS);
   };
-  
-  // 监听数据库就绪事件（优先处理）
+
+  // 监听数据库就绪事件（优先处理，避免竞态）
   if (window.electronAPI?.system?.onDatabaseReady) {
     window.electronAPI.system.onDatabaseReady(() => {
       console.log('收到数据库就绪事件，加载数据');
-      databaseReady = true;
-      if (!loadMoviesCalled) {
-        loadMoviesCalled = true;
-        loadMovies();
-      }
+      if (!loadMoviesCalled) doLoadMoviesOnce();
     });
   }
-  
-  // 尝试加载数据（会先检查数据库是否就绪）
+
   tryLoadMovies();
   
   // 恢复滚动位置（延迟执行，确保 DOM 已渲染）
@@ -251,10 +282,17 @@ onMounted(() => {
     });
   }
   
-  // 监听扫描完成事件
+  // 监听扫描完成事件：扫描后数据可能变化，重置到第一页避免尾页无数据、分页器消失
   if (window.electronAPI?.system?.onScanCompleted) {
     window.electronAPI.system.onScanCompleted((result) => {
       console.log('扫描完成:', result);
+      currentPage.value = 1;
+      savePageState(pageKey, {
+        currentPage: 1,
+        pageSize: pageSize.value,
+        sortBy: sortBy.value
+      });
+      clearScrollPosition(pageKey);
       loadMovies();
     });
   }

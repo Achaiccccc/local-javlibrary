@@ -106,7 +106,7 @@
               <el-button v-if="movie.playable" type="success" @click="playVideo" icon="VideoPlay">
                 播放
               </el-button>
-              <el-button type="primary" @click="editMovie">编辑</el-button>
+              <el-button type="primary" @click="editMovie" icon="Edit">编辑</el-button>
               <el-button 
                 @click="openFileLocation" 
                 icon="FolderOpened"
@@ -116,6 +116,80 @@
               </el-button>
             </div>
           </div>
+        </div>
+
+        <!-- 预览图：仅当存在多于一张图（详情图+至少一张 extrafanart）时展示；大图轮播中下方显示页数 -->
+        <div v-if="movie && hasPreviewImages" class="detail-section preview-section">
+          <div class="section-title">预览图</div>
+          <div class="preview-strip">
+            <div
+              v-for="(url, idx) in previewImageUrls"
+              :key="idx"
+              class="preview-thumb-wrap"
+              @click="openPreview(idx)"
+            >
+              <el-image
+                :src="url"
+                fit="cover"
+                class="preview-thumb"
+                :preview-teleported="true"
+              >
+                <template #error>
+                  <div class="preview-thumb-slot">加载失败</div>
+                </template>
+              </el-image>
+            </div>
+          </div>
+        </div>
+
+        <!-- 自定义预览轮播层：中间下方显示页数 如 3/10 -->
+        <Teleport to="body">
+          <div
+            v-show="previewVisible"
+            class="preview-viewer-mask"
+            @click.self="closePreview"
+          >
+            <img
+              v-if="currentPreviewUrl"
+              class="preview-viewer-img"
+              :src="currentPreviewUrl"
+              alt=""
+              @click.stop
+            />
+            <div class="preview-viewer-pagination">{{ previewPageText }}</div>
+            <button
+              v-if="previewImageUrls.length > 1"
+              type="button"
+              class="preview-viewer-btn preview-viewer-prev"
+              aria-label="上一张"
+              @click.stop="prevPreview"
+            >
+              ‹
+            </button>
+            <button
+              v-if="previewImageUrls.length > 1"
+              type="button"
+              class="preview-viewer-btn preview-viewer-next"
+              aria-label="下一张"
+              @click.stop="nextPreview"
+            >
+              ›
+            </button>
+            <button
+              type="button"
+              class="preview-viewer-close"
+              aria-label="关闭"
+              @click.stop="closePreview"
+            >
+              ×
+            </button>
+          </div>
+        </Teleport>
+
+        <!-- 作品简介：来自 NFO 的 originalplot，无则不展示 -->
+        <div v-if="movie && detailExtras.originalplot" class="detail-section synopsis-section">
+          <div class="section-title">作品简介</div>
+          <div class="synopsis-text">{{ detailExtras.originalplot }}</div>
         </div>
         
         <!-- 编辑对话框 -->
@@ -254,7 +328,7 @@
 import { ref, onMounted, computed, onBeforeMount, onBeforeUnmount } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { VideoPlay, FolderOpened, DocumentCopy } from '@element-plus/icons-vue';
+import { VideoPlay, FolderOpened, DocumentCopy, Edit } from '@element-plus/icons-vue';
 import { loadImage as loadImageWithPriority, resumeBackgroundLoading } from '../utils/imageLoader';
 
 const router = useRouter();
@@ -271,7 +345,50 @@ const movieId = computed(() => {
 const loading = ref(true);
 const movie = ref(null);
 const posterUrl = ref('');
+const detailExtras = ref({ originalplot: null, previewImagePaths: [] });
+const previewImageUrls = ref([]);
+const previewVisible = ref(false);
+const previewCurrentIndex = ref(0);
 const editDialogVisible = ref(false);
+
+/** 仅当存在多于一张图（详情图 + 至少一张 extrafanart）时展示预览图区域 */
+const hasPreviewImages = computed(() => {
+  const paths = detailExtras.value.previewImagePaths;
+  return Array.isArray(paths) && paths.length > 1;
+});
+
+const currentPreviewUrl = computed(() => {
+  const urls = previewImageUrls.value;
+  const i = previewCurrentIndex.value;
+  return urls[i] || '';
+});
+
+const previewPageText = computed(() => {
+  const total = previewImageUrls.value.length;
+  const current = previewCurrentIndex.value + 1;
+  return total ? `${current}/${total}` : '';
+});
+
+function openPreview(idx) {
+  previewCurrentIndex.value = idx;
+  previewVisible.value = true;
+}
+
+function closePreview() {
+  previewVisible.value = false;
+}
+
+function prevPreview() {
+  const len = previewImageUrls.value.length;
+  if (len <= 1) return;
+  previewCurrentIndex.value = (previewCurrentIndex.value - 1 + len) % len;
+}
+
+function nextPreview() {
+  const len = previewImageUrls.value.length;
+  if (len <= 1) return;
+  previewCurrentIndex.value = (previewCurrentIndex.value + 1) % len;
+}
 const editFormRef = ref(null);
 const saving = ref(false);
 const availableActors = ref([]);
@@ -298,7 +415,9 @@ const editFormRules = {
 const loadMovie = async () => {
   try {
     loading.value = true;
-    posterUrl.value = ''; // 重置图片URL
+    posterUrl.value = '';
+    detailExtras.value = { originalplot: null, previewImagePaths: [] };
+    previewImageUrls.value = [];
     if (!movieId.value) {
       ElMessage.error('无效的影片ID');
       return;
@@ -306,18 +425,41 @@ const loadMovie = async () => {
     const result = await window.electronAPI.movies.getById(movieId.value);
     if (result && result.success) {
       movie.value = result.data;
-      // 使用优先级加载图片（用户请求，优先处理）
+      const dataPathIndex = result.data.data_path_index || 0;
+      // 使用优先级加载主图
       const imagePath = result.data.fanart_path || result.data.poster_path;
       if (imagePath) {
         try {
-          const dataPathIndex = result.data.data_path_index || 0;
-          // 使用优先级加载，确保立即处理
           const imageUrl = await loadImageWithPriority(imagePath, dataPathIndex, true, {});
           posterUrl.value = imageUrl || '';
         } catch (error) {
           console.error('加载图片失败:', error);
           posterUrl.value = '';
         }
+      }
+      // 获取详情扩展：简介 + 预览图路径列表
+      try {
+        const extrasRes = await window.electronAPI.movies.getDetailExtras(movieId.value);
+        if (extrasRes?.success && extrasRes.data) {
+          detailExtras.value = {
+            originalplot: extrasRes.data.originalplot ?? null,
+            previewImagePaths: Array.isArray(extrasRes.data.previewImagePaths) ? extrasRes.data.previewImagePaths : []
+          };
+          if (detailExtras.value.previewImagePaths.length) {
+            const urls = [];
+            for (const p of detailExtras.value.previewImagePaths) {
+              try {
+                const u = await loadImageWithPriority(p, dataPathIndex, true, {});
+                urls.push(u || '');
+              } catch {
+                urls.push('');
+              }
+            }
+            previewImageUrls.value = urls;
+          }
+        }
+      } catch (e) {
+        console.error('加载详情扩展失败:', e);
       }
     } else {
       ElMessage.error('加载影片详情失败: ' + (result?.message || '未知错误'));
@@ -327,7 +469,6 @@ const loadMovie = async () => {
     ElMessage.error('加载影片详情失败: ' + error.message);
   } finally {
     loading.value = false;
-    // 加载完成后，恢复后台图片加载
     resumeBackgroundLoading();
   }
 };
@@ -615,13 +756,27 @@ onBeforeMount(() => {
   window.scrollTo({ top: 0, behavior: 'auto' });
 });
 
+function onPreviewKeydown(e) {
+  if (!previewVisible.value) return;
+  if (e.key === 'Escape') {
+    closePreview();
+    e.preventDefault();
+  } else if (e.key === 'ArrowLeft') {
+    prevPreview();
+    e.preventDefault();
+  } else if (e.key === 'ArrowRight') {
+    nextPreview();
+    e.preventDefault();
+  }
+}
+
 onBeforeUnmount(() => {
-  // 组件卸载时恢复后台加载
+  window.removeEventListener('keydown', onPreviewKeydown);
   resumeBackgroundLoading();
 });
 
 onMounted(() => {
-  // 确保滚动到顶部
+  window.addEventListener('keydown', onPreviewKeydown);
   window.scrollTo({ top: 0, behavior: 'auto' });
   loadMovie();
 });
@@ -713,6 +868,147 @@ onMounted(() => {
 .open-location-btn:active {
   background-color: #d9a82a;
   border-color: #d9a82a;
+}
+
+/* 详情页扩展：预览图、简介，宽度与 movie-content 一致 */
+.detail-section {
+  margin-top: 24px;
+  width: 100%;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--el-text-color-primary);
+}
+
+.preview-section .preview-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.preview-thumb {
+  height: 100px;
+  width: auto;
+  min-width: 80px;
+  max-width: 160px;
+  cursor: zoom-in;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.preview-thumb :deep(img) {
+  height: 100px;
+  object-fit: cover;
+}
+
+.preview-thumb-slot {
+  height: 100px;
+  min-width: 80px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.synopsis-section .synopsis-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+
+.preview-thumb-wrap {
+  cursor: zoom-in;
+}
+
+/* 自定义预览轮播层：中间下方页数 + 左右切换 */
+.preview-viewer-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-viewer-img {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  user-select: none;
+}
+
+.preview-viewer-pagination {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.preview-viewer-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.preview-viewer-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.preview-viewer-prev {
+  left: 24px;
+}
+
+.preview-viewer-next {
+  right: 24px;
+}
+
+.preview-viewer-close {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.preview-viewer-close:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 </style>
 

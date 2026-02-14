@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const glob = require('fast-glob');
 const { parseNfoFile } = require('../utils/xmlParser');
 const { getNfoFiles, getImagePaths, checkVideoFile } = require('../utils/fileUtils');
@@ -254,6 +255,12 @@ async function handleNewMovie(movieFolderPath, dataPath, dataPathIndex = 0) {
   const { poster, fanart } = await getImagePaths(movieFolderPath);
   const { playable, videoPath } = await checkVideoFile(movieFolderPath);
 
+  let folderUpdatedAt = null;
+  try {
+    const stat = fs.statSync(movieFolderPath);
+    if (stat && stat.mtime) folderUpdatedAt = stat.mtime;
+  } catch (e) {}
+
   let director = null;
   if (movieData.director && movieData.director.trim() !== '' && movieData.director.trim() !== '----') {
     [director] = await Director.findOrCreate({
@@ -284,7 +291,8 @@ async function handleNewMovie(movieFolderPath, dataPath, dataPathIndex = 0) {
       folder_path: path.relative(dataPath, movieFolderPath),
       playable: playable,
       video_path: videoPath ? path.relative(dataPath, videoPath) : null,
-      data_path_index: dataPathIndex
+      data_path_index: dataPathIndex,
+      folder_updated_at: folderUpdatedAt
     }
   });
 
@@ -301,7 +309,8 @@ async function handleNewMovie(movieFolderPath, dataPath, dataPathIndex = 0) {
       folder_path: path.relative(dataPath, movieFolderPath),
       playable: playable,
       video_path: videoPath ? path.relative(dataPath, videoPath) : null,
-      data_path_index: dataPathIndex
+      data_path_index: dataPathIndex,
+      folder_updated_at: folderUpdatedAt
     });
   }
 
@@ -349,6 +358,12 @@ async function handleMovieUpdate(movieFolderPath, dataPath, dataPathIndex = 0) {
   const { poster, fanart } = await getImagePaths(movieFolderPath);
   const { playable, videoPath } = await checkVideoFile(movieFolderPath);
 
+  let folderUpdatedAt = null;
+  try {
+    const stat = fs.statSync(movieFolderPath);
+    if (stat && stat.mtime) folderUpdatedAt = stat.mtime;
+  } catch (e) {}
+
   const movie = await Movie.findOne({ where: { code: movieData.code } });
   if (!movie) {
     await handleNewMovie(movieFolderPath, dataPath, dataPathIndex);
@@ -382,7 +397,8 @@ async function handleMovieUpdate(movieFolderPath, dataPath, dataPathIndex = 0) {
     folder_path: path.relative(dataPath, movieFolderPath),
     playable: playable,
     video_path: videoPath ? path.relative(dataPath, videoPath) : null,
-    data_path_index: dataPathIndex
+    data_path_index: dataPathIndex,
+    folder_updated_at: folderUpdatedAt
   });
 
   await movie.setActorsFromNfo([]);

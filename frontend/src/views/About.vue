@@ -13,7 +13,7 @@
               </el-icon>
             </div>
             <h2 class="app-name">JavLibrary</h2>
-            <div class="version">v2.4.0</div>
+            <div class="version">v2.5.0</div>
             
             <el-divider />
             
@@ -27,7 +27,9 @@
                 <span class="info-label">GitHub：</span>
                 <span class="info-value info-placeholder">https://github.com/Achaiccccc/local-jav-lib</span>
               </div>
-              
+              <p class="star-hint">如果觉得这个项目对你有帮助，欢迎点个 Star 支持一下。</p>
+              <p class="star-hint">你的支持是作者更新维护最大的动力。</p>
+
               <div class="info-item">
                 <span class="info-label">联系方式：</span>
                 <el-link 
@@ -41,7 +43,6 @@
             </div>
             
             <el-divider />
-            
             <div class="description">
               <p>本软件仅供学习和技术交流使用，请遵守当地法律法规。</p>
             </div>
@@ -126,12 +127,20 @@ const contactEmail = ref('x248336024@vip.qq.com');
 
 .info-value {
   color: #303133;
-  flex: 1;
+  /* flex: 1; */
 }
 
 .info-placeholder {
   color: #909399;
   font-style: italic;
+}
+
+.star-hint {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  color: #606266;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .description {
