@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     delete: (id, deleteFile) => ipcRenderer.invoke('movies:delete', id, deleteFile),
     getSeries: (code) => ipcRenderer.invoke('movies:getSeries', code),
     getImage: (path, dataPathIndex) => ipcRenderer.invoke('movies:getImage', path, dataPathIndex),
+    getDetailExtras: (id) => ipcRenderer.invoke('movies:getDetailExtras', id),
     openFileLocation: (id) => ipcRenderer.invoke('movies:openFileLocation', id)
   },
   
@@ -63,6 +64,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 系统相关
   system: {
     scan: () => ipcRenderer.invoke('system:scan'),
+    runStartupSync: () => ipcRenderer.invoke('system:runStartupSync'),
     getStats: () => ipcRenderer.invoke('system:getStats'),
     isDatabaseReady: () => ipcRenderer.invoke('system:isDatabaseReady'),
     onFileChange: (callback) => {
@@ -79,15 +81,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onScanProgress: (callback) => {
       ipcRenderer.on('scan:progress', (event, data) => callback(data));
+    },
+    onStartupSyncProgress: (callback) => {
+      ipcRenderer.on('sync:startupProgress', (event, data) => callback(data));
     }
   },
   
   // 设置相关
   settings: {
     getFilterPlayable: () => ipcRenderer.invoke('settings:getFilterPlayable'),
-    setFilterPlayable: (value) => ipcRenderer.invoke('settings:setFilterPlayable', value),
-    getRealtimeSync: () => ipcRenderer.invoke('settings:getRealtimeSync'),
-    setRealtimeSync: (value) => ipcRenderer.invoke('settings:setRealtimeSync', value)
+    setFilterPlayable: (value) => ipcRenderer.invoke('settings:setFilterPlayable', value)
   },
   
   // 播放相关

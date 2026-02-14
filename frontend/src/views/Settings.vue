@@ -52,11 +52,14 @@
           </template>
           <el-form label-width="120px">
             <el-form-item label="扫描操作">
-              <el-button type="primary" @click="scanData" :loading="scanning" :disabled="scanning">
-                开始扫描数据文件夹
+              <el-button type="default" @click="scanData" :loading="scanning" :disabled="scanning || syncDiffLoading">
+                完整扫描
+              </el-button>
+              <el-button type="primary" @click="runSyncDiff" :loading="syncDiffLoading" :disabled="scanning || syncDiffLoading" style="margin-left: 8px;">
+                仅扫描新增或修改
               </el-button>
             </el-form-item>
-            <el-form-item v-if="scanning || scanProgress.total > 0" label="扫描进度">
+            <el-form-item v-if="scanning || scanProgress.total > 0" label="完整扫描进度">
               <div style="width: 100%;">
                 <el-progress
                   :percentage="scanProgress.percentage"
@@ -70,9 +73,68 @@
                 </div>
               </div>
             </el-form-item>
+            <el-form-item v-if="syncDiffLoading || syncDiffProgress.total > 0" label="增量扫描进度">
+              <div style="width: 100%;">
+                <el-progress
+                  :percentage="syncDiffProgress.percentage"
+                  :stroke-width="8"
+                  :format="() => syncDiffProgress.total > 0 ? `${syncDiffProgress.current}/${syncDiffProgress.total} (${syncDiffProgress.percentage}%)` : (syncDiffProgress.message || '处理中…')"
+                  style="font-size: 12px;"
+                />
+                <div v-if="syncDiffProgress.message" style="margin-top: 4px; font-size: 11px; color: #909399;">
+                  {{ syncDiffProgress.message }}
+                </div>
+              </div>
+            </el-form-item>
+            <el-form-item v-if="syncDiffResult" label="增量扫描结果">
+              <div class="sync-diff-result">
+                <div v-if="syncDiffResult.removed > 0" style="margin-bottom: 8px;">
+                  <el-text type="info">已删除 {{ syncDiffResult.removed }} 条（磁盘已不存在的记录）</el-text>
+                </div>
+                <div v-if="syncDiffResult.addedList && syncDiffResult.addedList.length > 0" style="margin-bottom: 8px;">
+                  <el-text type="success">成功新增 {{ syncDiffResult.addedList.length }} 条</el-text>
+                  <el-collapse>
+                    <el-collapse-item title="查看列表" name="added">
+                      <ul class="sync-diff-list">
+                        <li v-for="(item, idx) in syncDiffResult.addedList" :key="idx">{{ item.path }}</li>
+                      </ul>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+                <div v-if="syncDiffResult.duplicateList && syncDiffResult.duplicateList.length > 0" style="margin-bottom: 8px;">
+                  <el-text type="warning">重复数据 {{ syncDiffResult.duplicateList.length }} 条（库中已存在同番号，仅更新路径等信息）</el-text>
+                  <el-collapse>
+                    <el-collapse-item title="查看列表" name="duplicate">
+                      <ul class="sync-diff-list">
+                        <li v-for="(item, idx) in syncDiffResult.duplicateList" :key="idx">{{ item.path }}</li>
+                      </ul>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+                <div v-if="syncDiffResult.failedList && syncDiffResult.failedList.length > 0">
+                  <el-text type="danger">失败 {{ syncDiffResult.failedList.length }} 条</el-text>
+                  <el-collapse>
+                    <el-collapse-item title="查看列表及原因" name="failed">
+                      <ul class="sync-diff-list sync-diff-failed">
+                        <li v-for="(item, idx) in syncDiffResult.failedList" :key="idx">
+                          <span class="path">{{ item.path }}</span>
+                          <span class="reason">{{ item.reason }}</span>
+                        </li>
+                      </ul>
+                    </el-collapse-item>
+                  </el-collapse>
+                </div>
+                <div v-if="syncDiffResult.added === 0 && syncDiffResult.removed === 0 && (!syncDiffResult.failedList || syncDiffResult.failedList.length === 0) && (!syncDiffResult.duplicateList || syncDiffResult.duplicateList.length === 0)" style="margin-top: 4px;">
+                  <el-text type="info">数据已与磁盘一致，无需更新</el-text>
+                </div>
+              </div>
+            </el-form-item>
             <el-form-item label="扫描说明">
-              <el-text type="info" size="small">
-                扫描将读取data文件夹中的所有NFO文件并更新数据库。建议在添加新数据后手动执行扫描。
+              <el-text type="info" size="small" style="display: block;">
+                完整扫描：读取所有 NFO 并全量更新数据库（首次或需要重建时使用）。
+              </el-text>
+              <el-text type="info" size="small" style="display: block; margin-top: 4px;">
+                仅扫描新增或修改：与启动时一致，对比磁盘与库，只新增缺失作品、删除数据库中实际已不存在的记录，数据量大时更快。同一番号对应多目录时，库中仅保留一条记录。
               </el-text>
             </el-form-item>
           </el-form>
@@ -99,26 +161,6 @@
           </el-form>
         </el-card>
         
-        <el-card style="margin-top: 20px;">
-          <template #header>
-            <span>实时同步设置</span>
-          </template>
-          <el-form label-width="120px">
-            <el-form-item label="启用实时同步">
-              <el-switch
-                v-model="realtimeSync"
-                @change="handleRealtimeSyncChange"
-                active-text="开启"
-                inactive-text="关闭"
-              />
-            </el-form-item>
-            <el-form-item label="说明">
-              <el-text type="info" size="small">
-                开启后，应用会自动监听并同步文件修改，如新增，删除，编辑等，数据量较大时在应用启动时会造成卡顿，同时占用一定的系统资源，建议数据量较大时（超过500条影片）关闭此选项，在修改后手动扫描更新数据。
-              </el-text>
-            </el-form-item>
-          </el-form>
-        </el-card>
       </el-main>
     </el-container>
   </div>
@@ -133,8 +175,16 @@ import { Plus, Delete } from '@element-plus/icons-vue';
 const router = useRouter();
 const dataPaths = ref([]);
 const scanning = ref(false);
+const syncDiffLoading = ref(false);
+const syncDiffProgress = ref({
+  phase: '',
+  current: 0,
+  total: 0,
+  message: '',
+  percentage: 0
+});
+const syncDiffResult = ref(null); // { added, removed, addedList, failedList }
 const filterPlayable = ref(false);
-const realtimeSync = ref(true);
 const scanProgress = ref({
   current: 0,
   total: 0,
@@ -172,32 +222,6 @@ const loadFilterPlayable = async () => {
     filterPlayable.value = await window.electronAPI.settings.getFilterPlayable();
   } catch (error) {
     console.error('加载过滤设置失败:', error);
-  }
-};
-
-const loadRealtimeSync = async () => {
-  try {
-    realtimeSync.value = await window.electronAPI.settings.getRealtimeSync();
-  } catch (error) {
-    console.error('加载实时同步设置失败:', error);
-  }
-};
-
-const handleRealtimeSyncChange = async (value) => {
-  try {
-    const result = await window.electronAPI.settings.setRealtimeSync(value);
-    if (result.success) {
-      ElMessage.success(value ? '实时同步已启用' : '实时同步已禁用');
-    } else {
-      ElMessage.error(result.message || '保存设置失败');
-      // 恢复原值
-      realtimeSync.value = !value;
-    }
-  } catch (error) {
-    console.error('保存实时同步设置失败:', error);
-    ElMessage.error('保存设置失败: ' + error.message);
-    // 恢复原值
-    realtimeSync.value = !value;
   }
 };
 
@@ -274,6 +298,40 @@ const removePath = async (index) => {
     if (error !== 'cancel') {
       ElMessage.error('删除路径失败: ' + error.message);
     }
+  }
+};
+
+const runSyncDiff = async () => {
+  if (dataPaths.value.length === 0) {
+    ElMessage.warning('请先添加数据路径');
+    return;
+  }
+  syncDiffLoading.value = true;
+  syncDiffResult.value = null;
+  syncDiffProgress.value = { phase: '', current: 0, total: 0, message: '准备中…', percentage: 0 };
+  try {
+    const result = await window.electronAPI.system.runStartupSync();
+    if (result.success === false) {
+      ElMessage.error(result.message || '执行失败');
+      return;
+    }
+    const { added = 0, removed = 0, addedList = [], duplicateList = [], failedList = [] } = result;
+    syncDiffResult.value = { added, removed, addedList, duplicateList, failedList };
+    if (removed > 0 || addedList.length > 0) {
+      ElMessage.success(`已与磁盘同步：删除 ${removed} 条，成功新增 ${addedList.length} 条${duplicateList.length > 0 ? `，重复 ${duplicateList.length} 条` : ''}${failedList.length > 0 ? `，失败 ${failedList.length} 条` : ''}`);
+    } else if (duplicateList.length > 0) {
+      ElMessage.warning(`有 ${duplicateList.length} 条重复数据（库中已存在同番号），请查看下方列表`);
+    } else if (failedList.length > 0) {
+      ElMessage.warning(`同步完成：失败 ${failedList.length} 条，请查看下方失败列表`);
+    } else {
+      ElMessage.info('数据已与磁盘一致，无需更新');
+    }
+  } catch (error) {
+    console.error('仅扫描新增或修改失败:', error);
+    ElMessage.error('执行失败: ' + (error?.message || '未知错误'));
+  } finally {
+    syncDiffLoading.value = false;
+    syncDiffProgress.value = { phase: 'done', current: 0, total: 0, message: '', percentage: 100 };
   }
 };
 
@@ -366,8 +424,23 @@ const goBack = () => {
 onMounted(() => {
   loadDataPaths();
   loadFilterPlayable();
-  loadRealtimeSync();
-  
+
+  // 监听增量同步进度（仅在本页触发的增量扫描时更新 UI）
+  if (window.electronAPI?.system?.onStartupSyncProgress) {
+    window.electronAPI.system.onStartupSyncProgress((data) => {
+      if (!syncDiffLoading.value) return;
+      const total = data.total || 0;
+      const current = data.current || 0;
+      syncDiffProgress.value = {
+        phase: data.phase || '',
+        current,
+        total,
+        message: data.message || '',
+        percentage: total > 0 ? Math.round((current / total) * 100) : (data.phase === 'done' ? 100 : 0)
+      };
+    });
+  }
+
   // 监听扫描进度事件（必须在组件挂载时设置，确保能接收到事件）
   if (window.electronAPI?.system?.onScanProgress) {
     window.electronAPI.system.onScanProgress((progress) => {
@@ -425,6 +498,32 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 0 20px;
+}
+
+.sync-diff-result {
+  font-size: 13px;
+}
+.sync-diff-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.sync-diff-list li {
+  margin: 4px 0;
+  word-break: break-all;
+}
+.sync-diff-failed li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sync-diff-failed .path {
+  color: var(--el-text-color-regular);
+}
+.sync-diff-failed .reason {
+  font-size: 12px;
+  color: var(--el-color-danger);
 }
 </style>
 <style>

@@ -30,11 +30,18 @@ win:
   verifyUpdateCodeSignature: false
   # 禁用资源编辑（避免使用 winCodeSign）
   requestedExecutionLevel: null
+# 覆盖更新说明：保持 appId 不变，运行新版本安装包并选择与旧版相同的安装目录即可覆盖更新，无需先卸载。
+# 安装程序会从注册表读取旧版安装路径并预填，用户直接“下一步”即可完成覆盖。
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
+  # 安装包文件名包含版本号，便于区分版本并有利于升级检测
+  artifactName: "${productName}-Setup-${version}.${ext}"
+  # 升级时也重新创建桌面快捷方式（即使用户曾删除）
+  createDesktopShortcut: always
   createStartMenuShortcut: true
+  # 允许请求管理员权限，避免覆盖时因文件占用或权限导致失败
+  allowElevation: true
 electronVersion: 28.0.0
 # 配置 native 依赖的构建 - 完全跳过重新编译（使用已编译的版本）
 nodeGypRebuild: false

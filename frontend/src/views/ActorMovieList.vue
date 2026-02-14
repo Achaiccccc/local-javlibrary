@@ -20,8 +20,8 @@
           :enable-view-mode-toggle="true"
           @update:pageSize="handlePageSizeChange"
           @update:currentPage="handlePageChange"
-          @update:sortBy="val => (sortBy.value = val)"
-          @update:viewMode="val => { displayViewMode.value = val; handleViewModeChange(); }"
+          @update:sortBy="handleSortByChange"
+          @update:viewMode="handleViewModeChangeWithVal"
           @rowClick="goToMovieDetail"
           :load-movie-image="movie => loadMovieImage(movie.poster_path, movie.data_path_index)"
         />
@@ -95,6 +95,14 @@ const displayViewMode = ref('thumbnail'); // 显示模式：文字/缩图
 const actorName = ref('');
 const imageCache = ref({}); // 图片缓存
 
+function handleSortByChange(val) {
+  sortBy.value = val;
+}
+function handleViewModeChangeWithVal(val) {
+  displayViewMode.value = val;
+  handleViewModeChange();
+}
+
 const loadMoviesRaw = async () => {
   loading.value = true;
   
@@ -145,6 +153,8 @@ const loadMoviesRaw = async () => {
     
     // 使用全局图片加载管理器分批加载图片
     loadImagesBatch(movies.value, imageCache.value, 20);
+  } else if (result.code === 'DB_NOT_READY') {
+    ElMessage.info(result.message || '数据库正在准备中，请稍候');
   } else {
     ElMessage.error('加载影片列表失败: ' + (result.message || '未知错误'));
   }

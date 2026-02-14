@@ -70,6 +70,11 @@ module.exports = (sequelize) => {
       allowNull: false,
       defaultValue: 0,
       comment: '数据路径索引，用于多路径支持'
+    },
+    folder_updated_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: '作品文件夹的修改时间（用于按更新时间排序）'
     }
   }, {
     tableName: 'movies',
@@ -81,7 +86,8 @@ module.exports = (sequelize) => {
       { fields: ['premiered'] },
       { fields: ['title'] },
       { fields: ['playable'] },
-      { fields: ['data_path_index'] }
+      { fields: ['data_path_index'] },
+      { fields: ['folder_updated_at'] }
     ]
   });
 

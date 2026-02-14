@@ -23,6 +23,8 @@
           >
             <el-option label="按发行时间排序-正序" value="premiered-asc" />
             <el-option label="按发行时间排序-倒序" value="premiered-desc" />
+            <el-option label="按更新时间排序-正序" value="folder_updated_at-asc" />
+            <el-option label="按更新时间排序-倒序" value="folder_updated_at-desc" />
             <el-option label="按标题排序-正序" value="title-asc" />
             <el-option label="按标题排序-倒序" value="title-desc" />
           </el-select>

@@ -407,8 +407,44 @@ async function updateNfoFilePartial(nfoPath, movieData) {
   console.log(`NFO文件已局部更新: ${nfoPath}`);
 }
 
+/**
+ * 从 NFO 文件中读取指定标签的文本内容（用于详情页简介等）
+ * @param {string} nfoPath - NFO 文件完整路径
+ * @param {string} tagName - 标签名，如 'originalplot'
+ * @returns {Promise<string|null>} - 标签文本内容，不存在或解析失败则返回 null
+ */
+async function readNfoTagContent(nfoPath, tagName) {
+  try {
+    const buffer = await fs.readFile(nfoPath);
+    const encoding = detectEncoding(buffer);
+    let content =
+      encoding.toLowerCase() === 'utf-8'
+        ? buffer.toString('utf-8')
+        : iconv.decode(buffer, encoding);
+    if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
+    content = fixUnescapedAmpersands(content);
+    content = fixScriptInContent(content);
+    content = fixInvalidTagNames(content);
+
+    const parser = new xml2js.Parser({
+      explicitArray: false,
+      mergeAttrs: true,
+      explicitRoot: false
+    });
+    const result = await parser.parseStringPromise(content);
+    const movie = result.movie || result;
+    const value = movie[tagName];
+    if (value == null) return null;
+    return extractText(value).trim() || null;
+  } catch (error) {
+    console.error(`读取NFO标签失败: ${nfoPath} [${tagName}]`, error);
+    return null;
+  }
+}
+
 module.exports = {
   parseNfoFile,
+  readNfoTagContent,
   detectEncoding,
   writeNfoFile,
   updateNfoFilePartial
