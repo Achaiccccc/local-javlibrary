@@ -44,7 +44,7 @@
                     end-placeholder="结束日期"
                     format="YYYY-MM-DD"
                     value-format="YYYY-MM-DD"
-                    style="width: 100%;"
+                    class="advanced-date-picker"
                   />
                 </el-form-item>
                 <el-form-item label="导演">
@@ -337,5 +337,14 @@ onMounted(() => {
 
 :deep(.el-form-item) {
   margin-bottom: 20px;
+}
+
+/* 多重搜索发行日期选择器固定宽度，与表单项左对齐 */
+.search :deep(.advanced-date-picker) {
+  width: 400px !important;
+  max-width: 400px;
+}
+.search :deep(.advanced-date-picker .el-input__wrapper) {
+  min-width: 0;
 }
 </style>

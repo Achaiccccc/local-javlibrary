@@ -149,6 +149,15 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
         // 检查是否有视频文件
         const { playable, videoPath } = await checkVideoFile(movieFolderPath);
         
+        // 获取作品文件夹修改时间（用于按更新时间排序）
+        let folderUpdatedAt = null;
+        try {
+          const stat = fs.statSync(movieFolderPath);
+          if (stat && stat.mtime) folderUpdatedAt = stat.mtime;
+        } catch (e) {
+          // 忽略 stat 失败，保持为 null
+        }
+        
         // 获取或创建导演（"----" 表示空值）
         let director = null;
         if (movieData.director && movieData.director.trim() !== '' && movieData.director.trim() !== '----') {
@@ -186,12 +195,13 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
               folder_path: path.relative(dataPath, movieFolderPath),
               playable: playable,
               video_path: videoPath ? path.relative(dataPath, videoPath) : null,
-              data_path_index: dataPathIndex
+              data_path_index: dataPathIndex,
+              folder_updated_at: folderUpdatedAt
             },
             transaction: t
           });
           
-          // 如果不是新创建的，更新数据（包括路径索引）
+          // 如果不是新创建的，更新数据（包括路径索引与文件夹修改时间）
           if (!created) {
             await movie.update({
               title: movieData.title,
@@ -205,7 +215,8 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
               folder_path: path.relative(dataPath, movieFolderPath),
               playable: playable,
               video_path: videoPath ? path.relative(dataPath, videoPath) : null,
-              data_path_index: dataPathIndex
+              data_path_index: dataPathIndex,
+              folder_updated_at: folderUpdatedAt
             }, { transaction: t });
           }
           

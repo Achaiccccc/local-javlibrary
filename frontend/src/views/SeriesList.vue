@@ -10,17 +10,18 @@
       <el-main>
         <MovieListLayout
           :loading="loading"
-          :movies="movies"
-          :total="movies.length"
+          :movies="sortedMovies"
+          :total="sortedMovies.length"
           :current-page="1"
-          :page-size="movies.length"
-          sort-by="premiered-desc"
+          :page-size="sortedMovies.length"
+          :sort-by="sortBy"
           view-mode="thumbnail"
           :image-cache="imageCache"
           empty-text="暂无影片数据"
           :show-pagination="false"
           :enableViewModeToggle="false"
           :load-movie-image="(movie) => loadMovieImage(movie.poster_path, movie.data_path_index)"
+          @update:sortBy="handleSortByChange"
           @rowClick="goToMovieDetail"
         />
       </el-main>
@@ -41,7 +42,40 @@ const seriesPrefix = computed(() => route.params.prefix);
 
 const loading = ref(true);
 const movies = ref([]);
+const sortBy = ref('premiered-desc');
 const imageCache = ref({}); // 图片缓存
+
+function handleSortByChange(val) {
+  sortBy.value = val;
+}
+
+const sortedMovies = computed(() => {
+  const list = [...(movies.value || [])];
+  const by = sortBy.value;
+  if (by === 'title-asc') {
+    list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  } else if (by === 'title-desc') {
+    list.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+  } else if (by === 'premiered-asc') {
+    list.sort((a, b) => ((a.premiered || '').localeCompare(b.premiered || '')));
+  } else if (by === 'folder_updated_at-asc') {
+    list.sort((a, b) => {
+      const tA = a.folder_updated_at ? new Date(a.folder_updated_at).getTime() : 0;
+      const tB = b.folder_updated_at ? new Date(b.folder_updated_at).getTime() : 0;
+      return tA - tB;
+    });
+  } else if (by === 'folder_updated_at-desc') {
+    list.sort((a, b) => {
+      const tA = a.folder_updated_at ? new Date(a.folder_updated_at).getTime() : 0;
+      const tB = b.folder_updated_at ? new Date(b.folder_updated_at).getTime() : 0;
+      return tB - tA;
+    });
+  } else {
+    // premiered-desc 或默认
+    list.sort((a, b) => ((b.premiered || '').localeCompare(a.premiered || '')));
+  }
+  return list;
+});
 
 const loadMovies = async () => {
   try {

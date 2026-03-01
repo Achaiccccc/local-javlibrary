@@ -196,12 +196,14 @@ async function initDatabase() {
           // 检查 movies 表是否有 director_id 列和 data_path_index 列
           let needsMigration = false;
           let needsDataPathIndex = false;
+          let needsFolderUpdatedAt = false;
           if (existingTables.includes('movies')) {
             try {
               const [columns] = await sequelize.query(`PRAGMA table_info(movies)`);
               const hasDirectorId = columns.some(col => col.name === 'director_id');
               const hasDirector = columns.some(col => col.name === 'director');
               const hasDataPathIndex = columns.some(col => col.name === 'data_path_index');
+              const hasFolderUpdatedAt = columns.some(col => col.name === 'folder_updated_at');
               if (!hasDirectorId && hasDirector) {
                 needsMigration = true;
                 console.log('检测到需要迁移：movies 表有 director 字段但没有 director_id 字段');
@@ -210,12 +212,16 @@ async function initDatabase() {
                 needsDataPathIndex = true;
                 console.log('检测到需要添加 data_path_index 字段');
               }
+              if (!hasFolderUpdatedAt) {
+                needsFolderUpdatedAt = true;
+                console.log('检测到需要添加 folder_updated_at 字段');
+              }
             } catch (err) {
               console.warn('检查表结构时出错:', err.message);
             }
           }
           
-          if (missingTables.length > 0 || needsMigration || needsDataPathIndex) {
+          if (missingTables.length > 0 || needsMigration || needsDataPathIndex || needsFolderUpdatedAt) {
             if (missingTables.length > 0) {
               console.log('发现缺失的表，将创建:', missingTables);
             }
@@ -307,6 +313,30 @@ async function initDatabase() {
                 console.log('通过 sync alter 添加 data_path_index 字段');
               } catch (syncError) {
                 console.error('通过 sync alter 添加字段也失败:', syncError);
+              }
+            }
+          }
+          // 如果需要添加 folder_updated_at 字段
+          if (needsFolderUpdatedAt && existingTables.includes('movies')) {
+            try {
+              console.log('开始添加 folder_updated_at 字段...');
+              const [columns] = await sequelize.query(`PRAGMA table_info(movies)`);
+              const hasFolderUpdatedAt = columns.some(col => col.name === 'folder_updated_at');
+              if (!hasFolderUpdatedAt) {
+                await sequelize.query(`
+                  ALTER TABLE movies ADD COLUMN folder_updated_at DATETIME
+                `);
+                console.log('folder_updated_at 字段已添加');
+              } else {
+                console.log('folder_updated_at 字段已存在');
+              }
+            } catch (addColumnError) {
+              console.error('添加 folder_updated_at 字段失败:', addColumnError);
+              try {
+                await sequelize.sync({ alter: true, force: false });
+                console.log('通过 sync alter 添加 folder_updated_at 字段');
+              } catch (syncError) {
+                console.error('通过 sync alter 添加 folder_updated_at 也失败:', syncError);
               }
             }
           }

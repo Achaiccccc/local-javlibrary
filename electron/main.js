@@ -12,7 +12,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 const Store = require('electron-store');
 const { initDatabase } = require('./src/config/database');
-const { initFileWatcher } = require('./src/services/sync');
+const { runStartupSync } = require('./src/services/sync');
 const { registerIpcHandlers, updateMainWindow } = require('./src/ipc/handlers');
 
 // 配置存储
@@ -22,7 +22,6 @@ const store = new Store({
 });
 
 let mainWindow = null;
-let fileWatcher = null;
 
 // 创建主窗口
 function createWindow() {
@@ -331,28 +330,24 @@ app.whenReady().then(async () => {
         }
       }
       
-      // 数据库初始化完成后，根据设置决定是否启动文件监听
-      // 延迟5秒启动，让应用先完成初始加载
-      setTimeout(async () => {
-        try {
-          // 检查是否启用了实时同步
-          const enableRealtimeSync = store.get('enableRealtimeSync', true); // 默认开启
-          if (enableRealtimeSync) {
-            const { getDataPaths } = require('./src/config/paths');
-            const dataPaths = getDataPaths();
-            fileWatcher = await initFileWatcher(dataPaths.length > 0 ? dataPaths : [dataPath], mainWindow);
-            console.log('文件监听已启动（延迟启动），监听路径数:', dataPaths.length || 1);
-          } else {
-            console.log('实时同步已禁用，跳过文件监听启动');
-          }
-        } catch (error) {
-          console.error('文件监听启动失败:', error);
-          // 如果启动失败，不阻止应用继续运行
+      // 数据库初始化完成后，与磁盘做 diff 并更新数据库（分批执行，避免卡死）
+      setTimeout(() => {
+        const { getDataPaths } = require('./src/config/paths');
+        const dataPaths = getDataPaths();
+        if (dataPaths && dataPaths.length > 0) {
+          runStartupSync(dataPaths, mainWindow)
+            .then(({ added, removed }) => {
+              if (added > 0 || removed > 0) {
+                console.log('启动同步完成：新增', added, '条，删除', removed, '条');
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('file:changed', { type: 'startup_sync_done', added, removed });
+                }
+              }
+            })
+            .catch((err) => console.error('启动同步失败:', err));
         }
-      }, 5000); // 延迟5秒启动
-      
-      // 不再自动扫描，改为在设置页面手动触发
-      console.log('数据库初始化完成，等待手动扫描');
+        console.log('数据库初始化完成');
+      }, 2000);
     }).catch((error) => {
       console.error('数据库初始化失败:', error);
       // 通知前端数据库初始化失败
@@ -530,26 +525,6 @@ app.whenReady().then(async () => {
 
 // 所有窗口关闭时
 app.on('window-all-closed', () => {
-  if (fileWatcher) {
-    // fileWatcher 可能是数组或单个对象
-    if (Array.isArray(fileWatcher)) {
-      fileWatcher.forEach(watcher => {
-        if (watcher) {
-          try {
-            watcher.close();
-          } catch (error) {
-            console.error('关闭文件监听器失败:', error);
-          }
-        }
-      });
-    } else {
-      try {
-    fileWatcher.close();
-      } catch (error) {
-        console.error('关闭文件监听器失败:', error);
-      }
-    }
-  }
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -561,26 +536,3 @@ app.on('activate', () => {
   }
 });
 
-// 应用退出前
-app.on('before-quit', () => {
-  if (fileWatcher) {
-    // fileWatcher 可能是数组或单个对象
-    if (Array.isArray(fileWatcher)) {
-      fileWatcher.forEach(watcher => {
-        if (watcher) {
-          try {
-            watcher.close();
-          } catch (error) {
-            console.error('关闭文件监听器失败:', error);
-          }
-        }
-      });
-    } else {
-      try {
-    fileWatcher.close();
-      } catch (error) {
-        console.error('关闭文件监听器失败:', error);
-      }
-    }
-  }
-});
