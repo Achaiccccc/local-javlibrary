@@ -54,6 +54,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'About' });
 import { ref } from 'vue';
 import { VideoCamera } from '@element-plus/icons-vue';
 

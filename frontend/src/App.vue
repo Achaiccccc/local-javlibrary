@@ -29,7 +29,11 @@
       </el-menu>
     </div>
     <div class="router-view-container">
-      <router-view />
+      <router-view v-slot="{ Component, route: r }">
+        <keep-alive :max="10" :include="cachedViewNames">
+          <component :is="Component" :key="r.fullPath" />
+        </keep-alive>
+      </router-view>
     </div>
   </div>
 </template>
@@ -38,9 +42,13 @@
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { pauseBackgroundLoading, resumeBackgroundLoading } from './utils/imageLoader';
+import { useScanStore } from './stores/scanStore';
 
 const route = useRoute();
+const scanStore = useScanStore();
 const activeMenu = computed(() => route.path);
+
+const cachedViewNames = ['MovieListPage', 'Search', 'ActorCatalog', 'GenreCatalog', 'StudioCatalog', 'DirectorCatalog'];
 
 const menuVisible = ref(true);
 let lastScrollTop = 0;
@@ -81,8 +89,12 @@ watch(() => route.path, (newPath, oldPath) => {
 onMounted(() => {
   window.addEventListener('scroll', handleScroll, { passive: true });
   lastScrollTop = window.pageYOffset || document.documentElement.scrollTop;
-  // 页面加载完成后恢复后台加载
   resumeBackgroundLoading();
+  if (window.electronAPI?.system?.onFileChange) {
+    window.electronAPI.system.onFileChange((data) => {
+      if (data?.type === 'startup_sync_done') scanStore.incrementDataVersion();
+    });
+  }
 });
 
 onBeforeUnmount(() => {

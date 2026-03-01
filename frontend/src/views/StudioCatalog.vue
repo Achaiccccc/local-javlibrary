@@ -35,11 +35,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+defineOptions({ name: 'StudioCatalog' });
+import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { useScanStore } from '../stores/scanStore';
 
 const router = useRouter();
+const scanStore = useScanStore();
+const lastRefreshedDataVersion = ref(0);
 const loading = ref(true);
 const studios = ref([]);
 const filterPlayable = ref(false);
@@ -50,6 +54,7 @@ const loadStudios = async () => {
     const result = await window.electronAPI.studios.getList();
     if (result.success) {
       studios.value = result.data || [];
+      lastRefreshedDataVersion.value = scanStore.dataVersion;
     } else {
       ElMessage.error('加载制作商列表失败: ' + (result.message || '未知错误'));
     }
@@ -82,10 +87,16 @@ const loadFilterPlayable = async () => {
   }
 };
 
+onActivated(() => {
+  if (scanStore.dataVersion > lastRefreshedDataVersion.value) {
+    lastRefreshedDataVersion.value = scanStore.dataVersion;
+    loadStudios();
+  }
+});
+
 onMounted(() => {
   loadFilterPlayable();
   loadStudios();
-  
   if (window.electronAPI?.system?.onFileChange) {
     window.electronAPI.system.onFileChange((data) => {
       console.log('文件变化:', data);

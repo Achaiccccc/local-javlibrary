@@ -957,12 +957,20 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         return { success: false, message: '数据库未初始化' };
       }
       
-      // 获取显示模式：'folder' 文件目录模式 或 'actor' 女优目录模式
       const viewMode = params.viewMode || 'folder';
+      const ActorFromNfo = sequelize.models.ActorFromNfo;
+
+      // 轻量模式：仅返回 id/name，供搜索页下拉等使用，不做 Movie 关联与统计
+      if (params.namesOnly && viewMode === 'actor') {
+        const rows = await ActorFromNfo.findAll({
+          attributes: ['id', 'name'],
+          order: [['name', 'ASC']],
+          raw: true
+        });
+        return { success: true, data: rows };
+      }
       
       const Movie = sequelize.models.Movie;
-      const ActorFromNfo = sequelize.models.ActorFromNfo;
-      
       let actorsData = [];
       
       if (viewMode === 'folder') {
@@ -1256,15 +1264,22 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   });
 
   // 分类相关IPC
-  ipcMain.handle('genres:getList', async () => {
+  ipcMain.handle('genres:getList', async (event, params = {}) => {
     try {
       const sequelize = getSequelize();
       if (!sequelize || !sequelize.models) {
         return { success: false, message: '数据库未初始化', data: [] };
       }
       const Genre = sequelize.models.Genre;
+      if (params.namesOnly) {
+        const genres = await Genre.findAll({
+          attributes: ['id', 'name'],
+          order: [['name', 'ASC']],
+          raw: true
+        });
+        return { success: true, data: genres };
+      }
       const Movie = sequelize.models.Movie;
-      
       const genres = await Genre.findAll({
         include: [{
           model: Movie,
@@ -1275,8 +1290,6 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         order: [['name', 'ASC']],
         raw: false
       });
-      
-      // 统计每个分类的电影数量和可播放数量
       const genresData = genres.map(genre => {
         const movies = genre.Movies || [];
         const totalCount = movies.length;
@@ -1423,15 +1436,22 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   });
 
   // 制作商相关IPC
-  ipcMain.handle('studios:getList', async () => {
+  ipcMain.handle('studios:getList', async (event, params = {}) => {
     try {
       const sequelize = getSequelize();
       if (!sequelize || !sequelize.models) {
         return { success: false, message: '数据库未初始化', data: [] };
       }
       const Studio = sequelize.models.Studio;
+      if (params.namesOnly) {
+        const studios = await Studio.findAll({
+          attributes: ['id', 'name'],
+          order: [['name', 'ASC']],
+          raw: true
+        });
+        return { success: true, data: studios };
+      }
       const Movie = sequelize.models.Movie;
-      
       const studios = await Studio.findAll({
         include: [{
           model: Movie,
@@ -1441,8 +1461,6 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         order: [['name', 'ASC']],
         raw: false
       });
-      
-      // 统计每个制作商的电影数量和可播放数量
       const studiosData = studios.map(studio => {
         const movies = studio.Movies || [];
         const totalCount = movies.length;
@@ -1466,15 +1484,22 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   });
 
   // 导演相关IPC
-  ipcMain.handle('directors:getList', async () => {
+  ipcMain.handle('directors:getList', async (event, params = {}) => {
     try {
       const sequelize = getSequelize();
       if (!sequelize || !sequelize.models) {
         return { success: false, message: '数据库未初始化', data: [] };
       }
       const Director = sequelize.models.Director;
+      if (params.namesOnly) {
+        const directors = await Director.findAll({
+          attributes: ['id', 'name'],
+          order: [['name', 'ASC']],
+          raw: true
+        });
+        return { success: true, data: directors };
+      }
       const Movie = sequelize.models.Movie;
-      
       const directors = await Director.findAll({
         include: [{
           model: Movie,
@@ -1484,8 +1509,6 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         order: [['name', 'ASC']],
         raw: false
       });
-      
-      // 统计每个导演的电影数量和可播放数量
       const directorsData = directors.map(director => {
         const movies = director.Movies || [];
         const totalCount = movies.length;

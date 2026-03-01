@@ -35,11 +35,15 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+defineOptions({ name: 'DirectorCatalog' });
+import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { useScanStore } from '../stores/scanStore';
 
 const router = useRouter();
+const scanStore = useScanStore();
+const lastRefreshedDataVersion = ref(0);
 const loading = ref(true);
 const directors = ref([]);
 const filterPlayable = ref(false);
@@ -50,6 +54,7 @@ const loadDirectors = async () => {
     const result = await window.electronAPI.directors.getList();
     if (result.success) {
       directors.value = result.data || [];
+      lastRefreshedDataVersion.value = scanStore.dataVersion;
     } else {
       ElMessage.error('加载导演列表失败: ' + (result.message || '未知错误'));
     }
@@ -82,10 +87,16 @@ const loadFilterPlayable = async () => {
   }
 };
 
+onActivated(() => {
+  if (scanStore.dataVersion > lastRefreshedDataVersion.value) {
+    lastRefreshedDataVersion.value = scanStore.dataVersion;
+    loadDirectors();
+  }
+});
+
 onMounted(() => {
   loadFilterPlayable();
   loadDirectors();
-  
   if (window.electronAPI?.system?.onFileChange) {
     window.electronAPI.system.onFileChange((data) => {
       console.log('文件变化:', data);

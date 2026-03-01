@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 分类相关
   genres: {
-    getList: () => ipcRenderer.invoke('genres:getList'),
+    getList: (params) => ipcRenderer.invoke('genres:getList', params || {}),
     getById: (id) => ipcRenderer.invoke('genres:getById', id),
     getMovies: (id, params) => ipcRenderer.invoke('genres:getMovies', id, params),
     getOrCreateByName: (name) => ipcRenderer.invoke('genres:getOrCreateByName', name)
@@ -32,13 +32,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // 制作商相关
   studios: {
-    getList: () => ipcRenderer.invoke('studios:getList'),
+    getList: (params) => ipcRenderer.invoke('studios:getList', params || {}),
     getMovies: (id, params) => ipcRenderer.invoke('studios:getMovies', id, params)
   },
   
   // 导演相关
   directors: {
-    getList: () => ipcRenderer.invoke('directors:getList'),
+    getList: (params) => ipcRenderer.invoke('directors:getList', params || {}),
     getMovies: (id, params) => ipcRenderer.invoke('directors:getMovies', id, params)
   },
   

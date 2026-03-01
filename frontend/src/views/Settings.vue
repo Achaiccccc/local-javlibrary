@@ -180,12 +180,15 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'Settings' });
 import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete } from '@element-plus/icons-vue';
+import { useScanStore } from '../stores/scanStore';
 
 const router = useRouter();
+const scanStore = useScanStore();
 const dataPaths = ref([]);
 const autoScanOnStartup = ref(true);
 const scanning = ref(false);
@@ -364,6 +367,7 @@ const runSyncDiff = async () => {
     } else {
       ElMessage.info('数据已与磁盘一致，无需更新');
     }
+    scanStore.incrementDataVersion();
   } catch (error) {
     console.error('仅扫描新增或修改失败:', error);
     ElMessage.error('执行失败: ' + (error?.message || '未知错误'));
@@ -396,7 +400,7 @@ const scanData = async () => {
     if (result && result.success) {
       scanProgress.value.percentage = 100;
       scanProgress.value.status = result.failed > 0 ? 'exception' : 'success';
-
+      scanStore.incrementDataVersion();
       // 弹窗提示结果
       await ElMessageBox.alert(
         `扫描完成！\n总计: ${result.total}\n成功: ${result.successCount ?? result.success}\n失败: ${result.failed}`,

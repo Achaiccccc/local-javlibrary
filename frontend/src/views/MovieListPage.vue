@@ -37,11 +37,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+defineOptions({ name: 'MovieListPage' });
+import { ref, computed, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import MovieListLayout from '../components/MovieListLayout.vue';
 import { useListParamsStore } from '../stores/listParamsStore';
+import { useScanStore } from '../stores/scanStore';
 import { savePageState, getPageState, saveScrollPosition, restoreScrollPosition, clearScrollPosition } from '../utils/pageState';
 import { loadImagesBatch, pauseBackgroundLoading, resumeBackgroundLoading, loadImage } from '../utils/imageLoader';
 import { withLoadingOptimization } from '../utils/loadingOptimizer';
@@ -49,6 +51,10 @@ import { withLoadingOptimization } from '../utils/loadingOptimizer';
 const router = useRouter();
 const route = useRoute();
 const listParams = useListParamsStore();
+const scanStore = useScanStore();
+const lastRefreshedDataVersion = ref(0);
+const lastScrollTop = ref(0);
+const scrollCleanupRef = ref(null);
 
 const loading = ref(true);
 const movies = ref([]);
@@ -223,6 +229,7 @@ const loadDataRaw = async () => {
   movies.value = result.data || [];
   total.value = totalCount;
   loadImagesBatch(movies.value, imageCache.value, 20);
+  lastRefreshedDataVersion.value = scanStore.dataVersion;
   loading.value = false;
 };
 
@@ -266,8 +273,12 @@ function goToMovieDetail(movieId) {
   const id = typeof movieId === 'object' ? movieId?.id : movieId;
   if (!id) return;
   pauseBackgroundLoading();
+  if (scrollCleanupRef.value) {
+    scrollCleanupRef.value();
+    scrollCleanupRef.value = null;
+  }
   savePageState(pageKey.value, { currentPage: currentPage.value });
-  saveScrollPosition(pageKey.value);
+  saveScrollPosition(pageKey.value, lastScrollTop.value);
   router.push({ path: `/movie/${id}` });
 }
 
@@ -329,19 +340,49 @@ onMounted(() => {
   }
   tryLoad();
   restoreScrollPosition(pageKey.value, 200);
+  const onScroll = () => { lastScrollTop.value = window.scrollY ?? document.documentElement.scrollTop ?? 0; };
+  lastScrollTop.value = window.scrollY ?? document.documentElement.scrollTop ?? 0;
+  window.addEventListener('scroll', onScroll, { passive: true });
+  scrollCleanupRef.value = () => window.removeEventListener('scroll', onScroll);
 
   if (window.electronAPI?.system?.onFileChange) {
     window.electronAPI.system.onFileChange(() => loadData());
   }
   if (window.electronAPI?.system?.onScanCompleted) {
     window.electronAPI.system.onScanCompleted(() => {
-      currentPage.value = 1;
-      savePageState(pageKey.value, { currentPage: 1 });
-      clearScrollPosition(pageKey.value);
-      loadData();
+      scanStore.incrementDataVersion();
     });
   }
   window.addEventListener('filterPlayableChanged', () => loadData());
+});
+
+onActivated(() => {
+  if (scrollCleanupRef.value) {
+    scrollCleanupRef.value();
+    scrollCleanupRef.value = null;
+  }
+  const onScroll = () => {
+    lastScrollTop.value = window.scrollY ?? document.documentElement.scrollTop ?? 0;
+  };
+  lastScrollTop.value = window.scrollY ?? document.documentElement.scrollTop ?? 0;
+  window.addEventListener('scroll', onScroll, { passive: true });
+  scrollCleanupRef.value = () => window.removeEventListener('scroll', onScroll);
+
+  if (scanStore.dataVersion > lastRefreshedDataVersion.value) {
+    lastRefreshedDataVersion.value = scanStore.dataVersion;
+    syncCurrentPageFromState();
+    loadData();
+  }
+  restoreScrollPosition(pageKey.value, 200);
+});
+
+onDeactivated(() => {
+  if (scrollCleanupRef.value) {
+    scrollCleanupRef.value();
+    scrollCleanupRef.value = null;
+  }
+  savePageState(pageKey.value, { currentPage: currentPage.value });
+  saveScrollPosition(pageKey.value, lastScrollTop.value);
 });
 
 onBeforeUnmount(() => {

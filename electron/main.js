@@ -342,13 +342,15 @@ app.whenReady().then(async () => {
             .then(({ added, removed }) => {
               if (added > 0 || removed > 0) {
                 console.log('启动同步完成：新增', added, '条，删除', removed, '条');
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send('file:changed', { type: 'startup_sync_done', added, removed });
-                }
               }
             })
             .catch((err) => console.error('启动同步失败:', err))
-            .finally(() => scanState.clearScanRunning());
+            .finally(() => {
+              scanState.clearScanRunning();
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('file:changed', { type: 'startup_sync_done' });
+              }
+            });
         }
         console.log('数据库初始化完成');
       }, 2000);

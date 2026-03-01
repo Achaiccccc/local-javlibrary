@@ -46,12 +46,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+defineOptions({ name: 'GenreCatalog' });
+import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { genreCategories } from '../config/genres';
+import { useScanStore } from '../stores/scanStore';
 
 const router = useRouter();
+const scanStore = useScanStore();
+const lastRefreshedDataVersion = ref(0);
 const loading = ref(true);
 const dbGenres = ref([]); // 数据库中的分类
 
@@ -61,6 +65,7 @@ const loadGenres = async () => {
     const result = await window.electronAPI.genres.getList();
     if (result.success) {
       dbGenres.value = result.data || [];
+      lastRefreshedDataVersion.value = scanStore.dataVersion;
     } else {
       ElMessage.error('加载分类列表失败: ' + (result.message || '未知错误'));
     }
@@ -142,6 +147,13 @@ const goBack = () => {
     router.push('/');
   }
 };
+
+onActivated(() => {
+  if (scanStore.dataVersion > lastRefreshedDataVersion.value) {
+    lastRefreshedDataVersion.value = scanStore.dataVersion;
+    loadGenres();
+  }
+});
 
 onMounted(() => {
   loadGenres();

@@ -325,6 +325,7 @@
 </template>
 
 <script setup>
+defineOptions({ name: 'MovieDetail' });
 import { ref, onMounted, computed, onBeforeMount, onBeforeUnmount } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
