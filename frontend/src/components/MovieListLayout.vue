@@ -14,6 +14,8 @@
             <el-option label="30" :value="30" />
             <el-option label="50" :value="50" />
             <el-option label="100" :value="100" />
+            <el-option label="500" :value="500" />
+            <el-option label="1000" :value="1000" />
           </el-select>
           <span style="margin-left: 16px;">排序：</span>
           <el-select
@@ -103,7 +105,7 @@
           v-model:current-page="internalCurrentPage"
           v-model:page-size="internalPageSize"
           :total="total"
-          :page-sizes="[10, 20, 30, 50, 100]"
+          :page-sizes="[10, 20, 30, 50, 100, 500, 1000]"
           layout="total, sizes, prev, pager, next, jumper"
           @size-change="val => $emit('update:pageSize', val)"
           @current-change="val => $emit('update:currentPage', val)"

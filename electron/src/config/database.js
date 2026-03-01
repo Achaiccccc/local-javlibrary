@@ -341,17 +341,17 @@ async function initDatabase() {
             }
           }
         } catch (alterError) {
-          // alter失败时，尝试强制同步（但会丢失数据，所以先警告）
-          console.error('数据库表结构更新失败:', alterError.message);
-          console.warn('尝试创建缺失的表...');
+          // alter 失败（常见为 Sequelize 在 SQLite 上 alter 表时的 Validation error，与现有数据/约束有关）
+          console.warn('数据库表结构自动更新未完成:', alterError.message);
           try {
-            // 只同步缺失的模型，不删除现有数据
             await sequelize.sync({ alter: true, force: false });
             console.log('数据库表同步成功');
           } catch (syncError) {
-            console.error('数据库同步最终失败:', syncError.message);
-            console.warn('如果遇到问题，请手动删除数据库文件后重新启动');
-            // 不抛出错误，继续使用现有数据库
+            // 不抛出错误，继续使用现有表结构运行；仅当需要最新表结构时可手动删除库文件后重启
+            console.warn('表结构自动更新跳过，将使用当前结构继续运行:', syncError.message);
+            if (process.env.NODE_ENV === 'development' && syncError.message) {
+              console.warn('如需应用最新表结构，可删除数据库文件后重新启动');
+            }
           }
         }
       } else {

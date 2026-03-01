@@ -14,6 +14,7 @@ const Store = require('electron-store');
 const { initDatabase } = require('./src/config/database');
 const { runStartupSync } = require('./src/services/sync');
 const { registerIpcHandlers, updateMainWindow } = require('./src/ipc/handlers');
+const scanState = require('./src/state/scanState');
 
 // 配置存储
 // 在开发环境中使用不同的配置名称，避免与生产环境共享数据
@@ -330,11 +331,13 @@ app.whenReady().then(async () => {
         }
       }
       
-      // 数据库初始化完成后，与磁盘做 diff 并更新数据库（分批执行，避免卡死）
+      // 数据库初始化完成后，若开启“启动时自动扫描”则与磁盘做 diff 并更新数据库（分批执行，避免卡死）
       setTimeout(() => {
         const { getDataPaths } = require('./src/config/paths');
         const dataPaths = getDataPaths();
-        if (dataPaths && dataPaths.length > 0) {
+        const autoScanOnStartup = store.get('autoScanOnStartup', true);
+        if (dataPaths && dataPaths.length > 0 && autoScanOnStartup) {
+          scanState.setScanRunning('incremental');
           runStartupSync(dataPaths, mainWindow)
             .then(({ added, removed }) => {
               if (added > 0 || removed > 0) {
@@ -344,7 +347,8 @@ app.whenReady().then(async () => {
                 }
               }
             })
-            .catch((err) => console.error('启动同步失败:', err));
+            .catch((err) => console.error('启动同步失败:', err))
+            .finally(() => scanState.clearScanRunning());
         }
         console.log('数据库初始化完成');
       }, 2000);

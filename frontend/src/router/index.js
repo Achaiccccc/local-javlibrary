@@ -4,7 +4,7 @@ const routes = [
   {
     path: '/',
     name: 'Home',
-    component: () => import('../views/Home.vue')
+    component: () => import('../views/MovieListPage.vue')
   },
   {
     path: '/actors',
@@ -24,7 +24,7 @@ const routes = [
   {
     path: '/actor/:id',
     name: 'ActorMovieList',
-    component: () => import('../views/ActorMovieList.vue')
+    component: () => import('../views/MovieListPage.vue')
   },
   {
     path: '/movie/:id',
@@ -34,12 +34,12 @@ const routes = [
   {
     path: '/genre/:id',
     name: 'GenreMovieList',
-    component: () => import('../views/GenreMovieList.vue')
+    component: () => import('../views/MovieListPage.vue')
   },
   {
     path: '/series/:prefix',
     name: 'SeriesList',
-    component: () => import('../views/SeriesList.vue')
+    component: () => import('../views/MovieListPage.vue')
   },
   {
     path: '/genres',
@@ -54,7 +54,7 @@ const routes = [
   {
     path: '/studio/:id',
     name: 'StudioMovieList',
-    component: () => import('../views/StudioMovieList.vue')
+    component: () => import('../views/MovieListPage.vue')
   },
   {
     path: '/directors',
@@ -64,7 +64,7 @@ const routes = [
   {
     path: '/director/:id',
     name: 'DirectorMovieList',
-    component: () => import('../views/DirectorMovieList.vue')
+    component: () => import('../views/MovieListPage.vue')
   },
   {
     path: '/search',
@@ -74,7 +74,7 @@ const routes = [
   {
     path: '/search/results',
     name: 'SearchResults',
-    component: () => import('../views/SearchResults.vue')
+    component: () => import('../views/MovieListPage.vue')
   }
 ];
 

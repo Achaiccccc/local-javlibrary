@@ -8,6 +8,7 @@ const { getExtraFanartRelativePaths } = require('../utils/fileUtils');
 const path = require('path');
 const fs = require('fs-extra');
 const Store = require('electron-store');
+const scanState = require('../state/scanState');
 
 // 存储主窗口引用，用于动态获取
 let mainWindowRef = null;
@@ -116,6 +117,19 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   ipcMain.handle('settings:setFilterPlayable', (event, value) => {
     settingsStore.set('filterPlayable', value);
     return { success: true };
+  });
+
+  ipcMain.handle('settings:getAutoScanOnStartup', () => {
+    return settingsStore.get('autoScanOnStartup', true);
+  });
+
+  ipcMain.handle('settings:setAutoScanOnStartup', (event, value) => {
+    settingsStore.set('autoScanOnStartup', !!value);
+    return { success: true };
+  });
+
+  ipcMain.handle('system:getScanStatus', () => {
+    return { inProgress: scanState.getScanInProgress(), type: scanState.getCurrentScanType() };
   });
 
   // 播放相关IPC
@@ -807,43 +821,47 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
     }
   });
 
-  ipcMain.handle('movies:getSeries', async (event, codeOrPrefix) => {
+  ipcMain.handle('movies:getSeries', async (event, codeOrPrefix, options = {}) => {
     try {
       const sequelize = getSequelize();
       if (!sequelize || !sequelize.models) {
-        return { success: false, message: '数据库未初始化', data: [] };
+        return { success: false, message: '数据库未初始化', data: [], total: 0 };
       }
       const Movie = sequelize.models.Movie;
-      
+      const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = options;
+      const order = getOrderFromSortBy(sortBy);
+
       // 检查是否启用可播放过滤
       const filterPlayable = settingsStore.get('filterPlayable', false);
-      
+
       // 提取系列前缀（如CAWD-001 -> CAWD，或直接使用CAWD）
-      const seriesPrefix = codeOrPrefix.includes('-') 
-        ? codeOrPrefix.split('-')[0] 
+      const seriesPrefix = codeOrPrefix.includes('-')
+        ? codeOrPrefix.split('-')[0]
         : codeOrPrefix;
-      
+
       const where = {
         code: {
           [Op.like]: `${seriesPrefix}-%`
         }
       };
-      
+
       if (filterPlayable) {
         where.playable = true;
       }
-      
-      const movies = await Movie.findAll({
+
+      const { count, rows: movies } = await Movie.findAndCountAll({
         where,
         include: [
           { model: sequelize.models.Actor, through: { attributes: [] }, attributes: ['id', 'name'] },
           { model: sequelize.models.Genre, through: { attributes: [] }, attributes: ['id', 'name'] },
           { model: sequelize.models.Studio, attributes: ['id', 'name'] }
         ],
-        order: [['code', 'ASC']]
+        order,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        distinct: true
       });
-      
-      // 将Sequelize Model实例转换为普通对象，确保可以序列化
+
       const moviesData = movies.map(movie => {
         const movieData = {
           id: movie.id,
@@ -864,36 +882,22 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           created_at: movie.created_at,
           updated_at: movie.updated_at
         };
-        
-        // 处理关联数据
         if (movie.Actors && Array.isArray(movie.Actors)) {
-          movieData.actors = movie.Actors.map(actor => ({
-            id: actor.id,
-            name: actor.name
-          }));
+          movieData.actors = movie.Actors.map(actor => ({ id: actor.id, name: actor.name }));
         }
-        
         if (movie.Genres && Array.isArray(movie.Genres)) {
-          movieData.genres = movie.Genres.map(genre => ({
-            id: genre.id,
-            name: genre.name
-          }));
+          movieData.genres = movie.Genres.map(genre => ({ id: genre.id, name: genre.name }));
         }
-        
         if (movie.Studio) {
-          movieData.studio = {
-            id: movie.Studio.id,
-            name: movie.Studio.name
-          };
+          movieData.studio = { id: movie.Studio.id, name: movie.Studio.name };
         }
-        
         return movieData;
       });
-      
-      return { success: true, data: moviesData };
+
+      return { success: true, data: moviesData, total: count };
     } catch (error) {
       console.error('获取系列影片失败:', error);
-      return { success: false, message: error.message, data: [] };
+      return { success: false, message: error.message, data: [], total: 0 };
     }
   });
 
@@ -1646,103 +1650,80 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   });
 
   // 搜索相关IPC
-  ipcMain.handle('search:simple', async (event, keyword) => {
+  ipcMain.handle('search:simple', async (event, keyword, options = {}) => {
     try {
       const sequelize = getSequelize();
       if (!sequelize || !sequelize.models) {
         return { success: false, message: '数据库未初始化', data: [], total: 0 };
       }
-      
       if (!keyword || keyword.trim() === '') {
         return { success: false, message: '请输入搜索关键词', data: [], total: 0 };
       }
-      
+      const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = options;
+      const order = getOrderFromSortBy(sortBy);
       const Movie = sequelize.models.Movie;
       const ActorFromNfo = sequelize.models.ActorFromNfo;
       const filterPlayable = settingsStore.get('filterPlayable', false);
-      
       const searchKeyword = `%${keyword.trim()}%`;
-      
-      // 构建查询条件：搜索标题、识别码、演员名称
-      const where = {
+      const maxIds = 2000;
+
+      const whereBase = {
         [Op.or]: [
           { title: { [Op.like]: searchKeyword } },
           { code: { [Op.like]: searchKeyword } }
         ]
       };
-      
-      if (filterPlayable) {
-        where.playable = true;
-      }
-      
-      // 查询影片（包含演员关联）
-      const movies = await Movie.findAll({
-        where,
-        include: [
-          {
-            model: ActorFromNfo,
-            through: { attributes: [] },
-            attributes: ['id', 'name'],
-            as: 'ActorsFromNfo',
-            required: false
-          }
-        ],
-        order: [['premiered', 'DESC']],
-        limit: 100 // 限制最多返回100条，避免数据过多
+      if (filterPlayable) whereBase.playable = true;
+
+      const byTitleCode = await Movie.findAll({
+        where: whereBase,
+        attributes: ['id'],
+        limit: maxIds
       });
-      
-      // 如果通过影片标题和识别码没有找到，尝试通过演员名称搜索
-      let additionalMovies = [];
-      if (movies.length < 100) {
-        const actors = await ActorFromNfo.findAll({
-          where: {
-            name: { [Op.like]: searchKeyword }
-          },
-          include: [
-            {
-              model: Movie,
-              through: { attributes: [] },
-              attributes: ['id', 'title', 'code', 'runtime', 'premiered', 'director_id', 'studio_id', 'poster_path', 'fanart_path', 'nfo_path', 'folder_path', 'playable', 'video_path', 'created_at', 'updated_at'],
-              as: 'Movies',
-              required: true,
-              where: filterPlayable ? { playable: true } : {}
-            }
-          ]
-        });
-        
-        // 收集所有通过演员找到的影片
-        const actorMovieIds = new Set(movies.map(m => m.id));
-        for (const actor of actors) {
-          if (actor.Movies && Array.isArray(actor.Movies)) {
-            for (const movie of actor.Movies) {
-              if (!actorMovieIds.has(movie.id)) {
-                actorMovieIds.add(movie.id);
-                // 重新查询完整数据（包含演员关联）
-                const fullMovie = await Movie.findByPk(movie.id, {
-                  include: [
-                    {
-                      model: ActorFromNfo,
-                      through: { attributes: [] },
-                      attributes: ['id', 'name'],
-                      as: 'ActorsFromNfo',
-                      required: false
-                    }
-                  ]
-                });
-                if (fullMovie) {
-                  additionalMovies.push(fullMovie);
-                }
-              }
-            }
+      const idsSet = new Set(byTitleCode.map(m => m.id));
+
+      const actors = await ActorFromNfo.findAll({
+        where: { name: { [Op.like]: searchKeyword } },
+        include: [{
+          model: Movie,
+          through: { attributes: [] },
+          attributes: ['id'],
+          as: 'Movies',
+          required: true,
+          where: filterPlayable ? { playable: true } : {}
+        }]
+      });
+      for (const actor of actors) {
+        if (actor.Movies && Array.isArray(actor.Movies)) {
+          for (const m of actor.Movies) {
+            idsSet.add(m.id);
+            if (idsSet.size >= maxIds) break;
           }
         }
+        if (idsSet.size >= maxIds) break;
       }
-      
-      // 合并结果
-      const allMovies = [...movies, ...additionalMovies];
-      
-      // 转换为普通对象
-      const moviesData = allMovies.map(movie => ({
+
+      const ids = Array.from(idsSet);
+      if (ids.length === 0) {
+        return { success: true, data: [], total: 0 };
+      }
+
+      const { count, rows: movies } = await Movie.findAndCountAll({
+        where: { id: { [Op.in]: ids } },
+        include: [{
+          model: ActorFromNfo,
+          through: { attributes: [] },
+          attributes: ['id', 'name'],
+          as: 'ActorsFromNfo',
+          required: false
+        }],
+        order,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        distinct: true
+      });
+
+      const moviesData = movies.map(movie => ({
         id: movie.id,
         title: movie.title,
         code: movie.code,
@@ -1756,16 +1737,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         folder_path: movie.folder_path,
         playable: movie.playable,
         video_path: movie.video_path,
+        data_path_index: movie.data_path_index || 0,
         folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       }));
-      
-      return {
-        success: true,
-        data: moviesData,
-        total: moviesData.length
-      };
+
+      return { success: true, data: moviesData, total: count };
     } catch (error) {
       console.error('简单搜索失败:', error);
       return { success: false, message: error.message, data: [], total: 0 };
@@ -1900,15 +1878,18 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         }
       }
       
-      // 执行查询
-      const movies = await Movie.findAll({
+      const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = params;
+      const order = getOrderFromSortBy(sortBy);
+
+      const { count, rows: movies } = await Movie.findAndCountAll({
         where,
         include: includeOptions,
-        order: [['premiered', 'DESC']],
-        limit: 1000 // 限制最多返回1000条
+        order,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        distinct: true
       });
-      
-      // 转换为普通对象
+
       const moviesData = movies.map(movie => ({
         id: movie.id,
         title: movie.title,
@@ -1923,16 +1904,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         folder_path: movie.folder_path,
         playable: movie.playable,
         video_path: movie.video_path,
+        data_path_index: movie.data_path_index || 0,
         folder_updated_at: movie.folder_updated_at,
         created_at: movie.created_at,
         updated_at: movie.updated_at
       }));
-      
-      return {
-        success: true,
-        data: moviesData,
-        total: moviesData.length
-      };
+
+      return { success: true, data: moviesData, total: count };
     } catch (error) {
       console.error('进阶搜索失败:', error);
       return { success: false, message: error.message, data: [], total: 0 };
@@ -1961,12 +1939,16 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   });
 
   ipcMain.handle('system:scan', async () => {
+    if (scanState.getScanInProgress()) {
+      return { success: false, alreadyRunning: true, type: scanState.getCurrentScanType() };
+    }
+    scanState.setScanRunning('full');
     try {
       const dataPaths = getDataPaths();
       if (!dataPaths || dataPaths.length === 0) {
         return { success: false, message: '未设置数据路径，请先在设置中选择数据文件夹' };
       }
-      
+
       let totalSuccess = 0;
       let totalFailed = 0;
       let totalCount = 0;
@@ -2079,10 +2061,16 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
     } catch (error) {
       console.error('扫描失败:', error);
       return { success: false, message: error.message };
+    } finally {
+      scanState.clearScanRunning();
     }
   });
 
   ipcMain.handle('system:runStartupSync', async () => {
+    if (scanState.getScanInProgress()) {
+      return { success: false, alreadyRunning: true, type: scanState.getCurrentScanType() };
+    }
+    scanState.setScanRunning('incremental');
     try {
       const dataPaths = getDataPaths();
       if (!dataPaths || dataPaths.length === 0) {
@@ -2099,6 +2087,8 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
     } catch (error) {
       console.error('仅扫描新增或修改失败:', error);
       return { success: false, message: error.message };
+    } finally {
+      scanState.clearScanRunning();
     }
   });
 
