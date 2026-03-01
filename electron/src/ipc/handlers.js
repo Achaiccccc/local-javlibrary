@@ -1004,14 +1004,20 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           }
         }
         
-        // 转换为数组格式
-        actorsData = Array.from(folderMap.entries()).map(([name, data]) => ({
-          id: `folder_${name}`, // 使用文件夹名作为ID的一部分
-          name: name,
-          totalCount: data.totalCount,
-          playableCount: data.playableCount,
-          viewMode: 'folder'
-        }));
+        // 转换为数组格式；若该文件夹下仅一部影片，带 movieId 供前端直接跳详情
+        actorsData = Array.from(folderMap.entries()).map(([name, data]) => {
+          const item = {
+            id: `folder_${name}`,
+            name: name,
+            totalCount: data.totalCount,
+            playableCount: data.playableCount,
+            viewMode: 'folder'
+          };
+          if (data.totalCount === 1 && data.movies && data.movies[0]) {
+            item.movieId = data.movies[0].id;
+          }
+          return item;
+        });
         
         // 按名称排序
         actorsData.sort((a, b) => a.name.localeCompare(b.name));
@@ -1133,11 +1139,11 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       if (viewMode === 'folder') {
         // 文件目录模式：根据文件夹路径查询
         const folderName = decodeURIComponent(id);
-        // folder_path 格式是 "演员名/作品名" 或 "演员名\作品名"（取决于操作系统）
-        // 需要匹配以 "文件夹名/" 或 "文件夹名\" 开头的路径
-        // 使用 Op.or 同时匹配两种路径分隔符，确保跨平台兼容
-        where.folder_path = { 
+        // folder_path 可能为单层（数据路径直接选到“文件夹目录”时，如 "作品文件夹1"）或多层（如 "演员名/作品名"）
+        // 需同时匹配：精确等于文件夹名、或以 "文件夹名/" 或 "文件夹名\" 开头
+        where.folder_path = {
           [Op.or]: [
+            { [Op.eq]: folderName },
             { [Op.like]: `${folderName}/%` },
             { [Op.like]: `${folderName}\\%` }
           ]

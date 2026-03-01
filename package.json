@@ -1,6 +1,6 @@
 {
   "name": "javlibrary",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "本地影视库管理系统",
   "main": "electron/main.js",
   "scripts": {

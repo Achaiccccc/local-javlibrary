@@ -30,7 +30,7 @@
                 :key="item.id"
                 class="actor-card"
                 shadow="hover"
-                @click="goToDetail(item.id)"
+                @click="goToDetail(item)"
               >
                 <div class="actor-info">
                   <div class="actor-name">{{ item.name }}</div>
@@ -165,9 +165,13 @@ const goToDetail = (item) => {
 
   if (type === 'actor') {
     if (mode === 'folder') {
-      // 文件目录模式：id是文件夹名（从folder_xxx格式中提取）
-      const folderName = typeof itemId === 'string' && itemId.startsWith('folder_') 
-        ? itemId.replace('folder_', '') 
+      // 文件目录模式：若该文件夹下仅一部影片，直接进入详情页；否则进入列表页
+      if (item.totalCount === 1 && item.movieId) {
+        router.push(`/movie/${item.movieId}`);
+        return;
+      }
+      const folderName = typeof itemId === 'string' && itemId.startsWith('folder_')
+        ? itemId.replace('folder_', '')
         : itemId;
       router.push(`/actor/${encodeURIComponent(folderName)}?viewMode=folder`);
     } else {
