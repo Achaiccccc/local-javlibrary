@@ -1,13 +1,16 @@
 <template>
   <div class="movie-detail">
     <el-container>
-      <el-header>
+      <el-header class="page-header">
         <div class="header-content">
-          <el-button @click="goBack" icon="ArrowLeft">返回</el-button>
-          <h1 style="margin: 0; margin-left: 16px;">影片详情</h1>
+          <div class="header-left">
+            <el-button @click="goBack" icon="ArrowLeft">返回</el-button>
+            <h1 class="header-title">影片详情</h1>
+          </div>
+          <ThemeSwitch />
         </div>
       </el-header>
-      <el-main>
+      <el-main class="page-theme-bg">
         <el-card v-if="loading">加载中...</el-card>
         <el-card v-else-if="!movie" class="empty-state">
           <el-empty description="影片不存在" />
@@ -331,6 +334,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { VideoPlay, FolderOpened, DocumentCopy, Edit } from '@element-plus/icons-vue';
 import { loadImage as loadImageWithPriority, resumeBackgroundLoading } from '../utils/imageLoader';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -792,11 +796,14 @@ onMounted(() => {
 .header-content {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  width: 100%;
 }
-
-.el-header {
-  background-color: #409eff;
-  color: white;
+.header-left { display: flex; align-items: center; }
+.header-title { margin: 0; margin-left: 16px; }
+.page-header {
+  background-color: var(--header-bg);
+  color: var(--title-color);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -844,8 +851,8 @@ onMounted(() => {
   align-items: center;
   width: 100%;
   height: 600px;
-  background: #f5f5f5;
-  color: #909399;
+  background: var(--image-slot-bg);
+  color: var(--image-slot-color);
   font-size: 14px;
 }
 

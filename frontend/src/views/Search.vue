@@ -1,10 +1,13 @@
 <template>
   <div class="search">
     <el-container>
-      <el-header>
-        <h1 style="margin: 0;">搜索</h1>
+      <el-header class="page-header">
+        <div class="header-content">
+          <h1 class="header-title">搜索</h1>
+          <ThemeSwitch />
+        </div>
       </el-header>
-      <el-main>
+      <el-main class="page-theme-bg">
         <el-card>
           <el-tabs v-model="activeTab">
             <!-- 简易搜索 -->
@@ -140,6 +143,7 @@ import { ref, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useScanStore } from '../stores/scanStore';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const router = useRouter();
 const scanStore = useScanStore();
@@ -328,9 +332,16 @@ onMounted(() => {
   height: 100%;
 }
 
-.el-header {
-  background-color: #409eff;
-  color: white;
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.header-title { margin: 0; }
+.page-header {
+  background-color: var(--header-bg);
+  color: var(--title-color);
   display: flex;
   align-items: center;
   padding: 0 20px;

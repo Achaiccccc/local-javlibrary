@@ -1,10 +1,13 @@
 <template>
   <div class="about">
     <el-container>
-      <el-header>
-        <h1 style="margin: 0;">关于</h1>
+      <el-header class="page-header">
+        <div class="header-content">
+          <h1 class="header-title">关于</h1>
+          <ThemeSwitch />
+        </div>
       </el-header>
-      <el-main>
+      <el-main class="page-theme-bg">
         <el-card class="about-card">
           <div class="about-content">
             <div class="app-logo">
@@ -57,6 +60,7 @@
 defineOptions({ name: 'About' });
 import { ref } from 'vue';
 import { VideoCamera } from '@element-plus/icons-vue';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const contactEmail = ref('x248336024@vip.qq.com');
 </script>
@@ -67,9 +71,16 @@ const contactEmail = ref('x248336024@vip.qq.com');
   height: 100%;
 }
 
-.el-header {
-  background-color: #409eff;
-  color: white;
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.header-title { margin: 0; }
+.page-header {
+  background-color: var(--header-bg);
+  color: var(--title-color);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -95,13 +106,13 @@ const contactEmail = ref('x248336024@vip.qq.com');
 .app-name {
   font-size: 32px;
   font-weight: bold;
-  color: #303133;
+  color: var(--content-title-color);
   margin-bottom: 10px;
 }
 
 .version {
   font-size: 18px;
-  color: #909399;
+  color: var(--content-subtitle-color);
   margin-bottom: 20px;
 }
 
@@ -115,31 +126,30 @@ const contactEmail = ref('x248336024@vip.qq.com');
   align-items: center;
   margin-bottom: 16px;
   padding: 12px;
-  background-color: #f5f7fa;
+  background-color: var(--card-disabled-bg);
   border-radius: 4px;
 }
 
 .info-label {
   font-weight: bold;
-  color: #606266;
+  color: var(--content-subtitle-color);
   min-width: 100px;
   margin-right: 12px;
 }
 
 .info-value {
-  color: #303133;
-  /* flex: 1; */
+  color: var(--content-title-color);
 }
 
 .info-placeholder {
-  color: #909399;
+  color: var(--content-subtitle-color);
   font-style: italic;
 }
 
 .star-hint {
   margin: 0 0 8px;
   padding: 0 12px;
-  color: #606266;
+  color: var(--content-subtitle-color);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -147,14 +157,14 @@ const contactEmail = ref('x248336024@vip.qq.com');
 .description {
   margin-top: 20px;
   padding: 16px;
-  background-color: #f0f9ff;
+  background-color: var(--card-disabled-bg);
   border-radius: 4px;
-  border-left: 4px solid #409eff;
+  border-left: 4px solid var(--el-color-primary);
 }
 
 .description p {
   margin: 0;
-  color: #606266;
+  color: var(--content-subtitle-color);
   line-height: 1.6;
   font-size: 14px;
 }

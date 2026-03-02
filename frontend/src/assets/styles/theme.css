@@ -1,0 +1,83 @@
+/**
+ * 主题色管理：日间/夜间及后续扩展
+ * 通过根节点 data-theme 切换，页面与组件使用 CSS 变量
+ */
+:root,
+[data-theme="light"] {
+  /* 页面与布局 */
+  --page-bg: #f5f5f5;
+  --nav-bg: #ffffff;
+  --header-bg: #409eff;
+  --header-border: rgba(0, 0, 0, 0.06);
+  /* 文字 */
+  --title-color: #ffffff;
+  --subtitle-color: rgba(255, 255, 255, 0.85);
+  /* 内容区标题/副标题（如分类标题、卡片副标题） */
+  --content-title-color: #303133;
+  --content-subtitle-color: #909399;
+  /* 卡片等背景 */
+  --card-bg: #ffffff;
+  --card-disabled-bg: #f5f5f5;
+  --image-slot-bg: #f5f5f5;
+  --image-slot-color: #909399;
+  --movie-title-color: #303133;
+}
+
+[data-theme="dark"] {
+  --page-bg: #1e1e1e;
+  --nav-bg: #383838;
+  --header-bg: #383838;
+  --header-border: rgba(255, 255, 255, 0.08);
+  --title-color: #ffffff;
+  --subtitle-color: #a5a5a5;
+  --content-title-color: #ffffff;
+  --content-subtitle-color: #a5a5a5;
+  --card-bg: #2b2b2b;
+  --card-disabled-bg: #252525;
+  --image-slot-bg: #252525;
+  --image-slot-color: #a5a5a5;
+  --movie-title-color: #ffffff;
+  /* 普通 switch 夜间激活色 */
+  --el-switch-on-color: #383838;
+}
+
+/* 主题切换开关单独：夜间激活填充色 #733ff1 */
+[data-theme="dark"] .theme-switch-wrap .el-switch {
+  --el-switch-on-color: #733ff1;
+}
+
+/* 视图模式切换（文字/缩图）夜间激活色 #383838 */
+[data-theme="dark"] .view-mode-toggle.el-radio-group .el-radio-button {
+  --el-radio-button-checked-bg-color: #383838;
+  --el-radio-button-checked-border-color: #383838;
+}
+
+/* 设置页：添加路径、仅扫描新增或修改 按钮夜间为主色 #383838 */
+[data-theme="dark"] .settings .el-button--primary {
+  --el-button-bg-color: #383838;
+  --el-button-border-color: #383838;
+  --el-button-hover-bg-color: #4a4a4a;
+  --el-button-hover-border-color: #4a4a4a;
+  background-color: #383838;
+  border-color: #383838;
+}
+[data-theme="dark"] .settings .el-button--primary:hover {
+  background-color: #4a4a4a;
+  border-color: #4a4a4a;
+}
+
+/* 页面根容器背景 */
+.page-theme-bg {
+  background-color: var(--page-bg);
+}
+
+/* 各页 el-main 使用页面背景 */
+.el-main.page-theme-bg {
+  background-color: var(--page-bg);
+}
+
+/* 全局：body 与 #app 背景随主题 */
+html[data-theme="dark"] body,
+html[data-theme="light"] body {
+  background-color: var(--page-bg);
+}

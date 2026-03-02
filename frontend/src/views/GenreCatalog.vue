@@ -1,13 +1,16 @@
 <template>
   <div class="genre-list">
     <el-container>
-      <el-header>
+      <el-header class="page-header">
         <div class="header-content">
-          <el-button @click="goBack" icon="ArrowLeft">返回</el-button>
-          <h1 style="margin: 0; margin-left: 16px;">分类列表</h1>
+          <div class="header-left">
+            <el-button @click="goBack" icon="ArrowLeft">返回</el-button>
+            <h1 class="header-title">分类列表</h1>
+          </div>
+          <ThemeSwitch />
         </div>
       </el-header>
-      <el-main>
+      <el-main class="page-theme-bg">
         <el-card>
           <div v-if="loading">加载中...</div>
           <div v-else class="genres-container">
@@ -52,6 +55,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { genreCategories } from '../config/genres';
 import { useScanStore } from '../stores/scanStore';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const router = useRouter();
 const scanStore = useScanStore();
@@ -169,11 +173,14 @@ onMounted(() => {
 .header-content {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  width: 100%;
 }
-
-.el-header {
-  background-color: #409eff;
-  color: white;
+.header-left { display: flex; align-items: center; }
+.header-title { margin: 0; margin-left: 16px; }
+.page-header {
+  background-color: var(--header-bg);
+  color: var(--title-color);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -190,10 +197,10 @@ onMounted(() => {
 .category-title {
   font-size: 20px;
   font-weight: bold;
-  color: #303133;
+  color: var(--content-title-color);
   margin-bottom: 16px;
   padding-bottom: 8px;
-  border-bottom: 2px solid #409eff;
+  border-bottom: 2px solid var(--el-color-primary);
 }
 
 .genres-grid {
@@ -215,7 +222,7 @@ onMounted(() => {
 .genre-disabled {
   cursor: not-allowed;
   opacity: 0.6;
-  background-color: #f5f5f5;
+  background-color: var(--card-disabled-bg);
 }
 
 .genre-info {
@@ -227,20 +234,21 @@ onMounted(() => {
   font-size: 12px;
   font-weight: bold;
   margin-bottom: 2px;
-  color: #303133;
+  color: var(--content-title-color);
 }
 
 .genre-name-disabled {
-  color: #909399;
+  color: var(--content-subtitle-color);
 }
 
 .genre-meta {
   font-size: 10px;
-  color: #909399;
+  color: var(--content-subtitle-color);
 }
 
 .genre-meta-disabled {
-  color: #c0c4cc;
+  color: var(--content-subtitle-color);
+  opacity: 0.8;
 }
 
 .playable-count {

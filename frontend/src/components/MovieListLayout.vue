@@ -36,6 +36,7 @@
         <div class="toolbar-right">
           <el-radio-group
             v-if="enableViewModeToggle"
+            class="view-mode-toggle"
             :model-value="viewMode"
             @change="$emit('update:viewMode', $event)"
           >
@@ -235,7 +236,7 @@ const onImageLoad = (movie) => {
   font-size: 14px;
   font-weight: bold;
   margin-bottom: 4px;
-  color: #303133;
+  color: var(--movie-title-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

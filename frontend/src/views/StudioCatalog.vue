@@ -1,12 +1,13 @@
 <template>
   <div class="studio-list">
     <el-container>
-      <el-header>
-        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
-          <h1 style="margin: 0;">制作商列表</h1>
+      <el-header class="page-header">
+        <div class="header-content">
+          <h1 class="header-title">制作商列表</h1>
+          <ThemeSwitch />
         </div>
       </el-header>
-      <el-main>
+      <el-main class="page-theme-bg">
         <el-card>
           <div v-if="loading">加载中...</div>
           <div v-else-if="studios.length === 0" class="empty-state">
@@ -40,6 +41,7 @@ import { ref, onMounted, onActivated, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useScanStore } from '../stores/scanStore';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const router = useRouter();
 const scanStore = useScanStore();
@@ -131,9 +133,16 @@ onMounted(() => {
   height: 100%;
 }
 
-.el-header {
-  background-color: #409eff;
-  color: white;
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.header-title { margin: 0; }
+.page-header {
+  background-color: var(--header-bg);
+  color: var(--title-color);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -168,12 +177,12 @@ onMounted(() => {
   font-size: 12px;
   font-weight: bold;
   margin-bottom: 2px;
-  color: #303133;
+  color: var(--content-title-color);
 }
 
 .studio-meta {
   font-size: 10px;
-  color: #909399;
+  color: var(--content-subtitle-color);
 }
 
 .playable-count {

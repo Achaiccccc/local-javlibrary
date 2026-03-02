@@ -1,13 +1,16 @@
 <template>
   <div class="movie-list-page">
     <el-container>
-      <el-header>
+      <el-header class="page-header">
         <div class="header-content">
-          <el-button v-if="listType !== 'home'" @click="goBack" icon="ArrowLeft">返回</el-button>
-          <h1 style="margin: 0; margin-left: listType === 'home' ? 0 : 16px;">{{ headerTitle }}</h1>
+          <div class="header-left" :class="{ 'no-back': listType === 'home' }">
+            <el-button v-if="listType !== 'home'" @click="goBack" icon="ArrowLeft">返回</el-button>
+            <h1 class="header-title">{{ headerTitle }}</h1>
+          </div>
+          <ThemeSwitch />
         </div>
       </el-header>
-      <el-main ref="mainContentRef">
+      <el-main ref="mainContentRef" class="page-theme-bg">
         <MovieListLayout
           :loading="loading"
           :movies="movies"
@@ -42,6 +45,7 @@ import { ref, computed, onMounted, onBeforeUnmount, onActivated, onDeactivated, 
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import MovieListLayout from '../components/MovieListLayout.vue';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 import { useListParamsStore } from '../stores/listParamsStore';
 import { useScanStore } from '../stores/scanStore';
 import { savePageState, getPageState, saveScrollPosition, restoreScrollPosition, clearScrollPosition } from '../utils/pageState';
@@ -393,10 +397,18 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .movie-list-page { width: 100%; height: 100%; }
-.header-content { display: flex; align-items: center; }
-.el-header {
-  background-color: #409eff;
-  color: white;
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.header-left { display: flex; align-items: center; }
+.header-title { margin: 0; margin-left: 16px; }
+.header-left.no-back .header-title { margin-left: 0; }
+.page-header {
+  background-color: var(--header-bg);
+  color: var(--title-color);
   display: flex;
   align-items: center;
   padding: 0 20px;

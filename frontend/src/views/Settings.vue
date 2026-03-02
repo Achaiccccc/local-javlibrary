@@ -1,10 +1,13 @@
 <template>
   <div class="settings">
     <el-container>
-      <el-header>
-        <h1 style="margin: 0;">设置</h1>
+      <el-header class="page-header">
+        <div class="header-content">
+          <h1 class="header-title">设置</h1>
+          <ThemeSwitch />
+        </div>
       </el-header>
-      <el-main>
+      <el-main class="page-theme-bg">
         <el-card>
           <template #header>
             <span>数据路径设置</span>
@@ -61,7 +64,7 @@
             </el-form-item>
             <el-form-item label="说明">
               <el-text type="info" size="small" style="display: block;">
-                关闭后，应用启动时不会自动执行「仅扫描新增或修改」；可在下方手动触发扫描。
+                开启后，应用会在启动时自动执行一次增量扫描操作。
               </el-text>
             </el-form-item>
             <el-form-item label="扫描操作">
@@ -185,6 +188,7 @@ import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete } from '@element-plus/icons-vue';
+import ThemeSwitch from '../components/ThemeSwitch.vue';
 import { useScanStore } from '../stores/scanStore';
 
 const router = useRouter();
@@ -547,9 +551,16 @@ onMounted(async () => {
   height: 100%;
 }
 
-.el-header {
-  background-color: #409eff;
-  color: white;
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.header-title { margin: 0; }
+.page-header {
+  background-color: var(--header-bg);
+  color: var(--title-color);
   display: flex;
   align-items: center;
   padding: 0 20px;
