@@ -36,6 +36,12 @@
 ![应用设置](images/JavLibrary-03.png)
 *应用设置*
 
+![夜间模式](images/JavLibrary-05.png)
+*夜间模式*
+
+![缩图模式](images/JavLibrary-06.png)
+*缩图模式*
+
 ## 技术栈
 
 - **Electron**: 跨平台桌面应用框架
