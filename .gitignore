@@ -57,3 +57,4 @@ backend/
 # Temporary files
 *.tmp
 *.temp
+commit_msg.txt
