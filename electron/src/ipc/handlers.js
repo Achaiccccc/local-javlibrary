@@ -36,6 +36,34 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
     if (sortBy === 'folder_updated_at-desc') return [['folder_updated_at', 'DESC']];
     return [['premiered', 'DESC']];
   }
+
+  /** 分类交集：返回同时拥有所有给定分类名称的影片 id 列表；若某名称在库中不存在则返回 []；无筛选时返回 null */
+  async function getMovieIdsWithAllGenres(sequelize, genreNames) {
+    if (!Array.isArray(genreNames) || genreNames.length === 0) return null;
+    const names = genreNames.map(n => (typeof n === 'string' ? n.trim() : '')).filter(Boolean);
+    if (names.length === 0) return null;
+    const Genre = sequelize.models.Genre;
+    const genres = await Genre.findAll({ where: { name: { [Op.in]: names } }, attributes: ['id'] });
+    const genreIds = genres.map(g => g.id);
+    if (genreIds.length < names.length) return []; // 有名称在库中不存在，无法满足“全部拥有”
+    if (genreIds.length === 0) return [];
+    const [rows] = await sequelize.query(
+      `SELECT movie_id FROM movie_genres WHERE genre_id IN (${genreIds.join(',')}) GROUP BY movie_id HAVING COUNT(DISTINCT genre_id) = ${genreIds.length}`
+    );
+    return rows.map(r => r.movie_id);
+  }
+
+  /** 年份并集：返回 { premiered: { [Op.or]: [ { [Op.between]: [...] }, ... ] } }，无筛选时返回 null */
+  function buildYearOrCondition(filterYears) {
+    if (!Array.isArray(filterYears) || filterYears.length === 0) return null;
+    const years = filterYears.map(y => parseInt(y, 10)).filter(y => !isNaN(y));
+    if (years.length === 0) return null;
+    return {
+      premiered: {
+        [Op.or]: years.map(y => ({ [Op.between]: [`${y}-01-01`, `${y}-12-31`] }))
+      }
+    };
+  }
   
   // 注意：所有IPC处理器都将在运行时动态获取模型，确保数据库已初始化
   // 这样可以避免在注册时模型未初始化的问题
@@ -213,7 +241,16 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         console.error('Movie模型未找到，已注册的模型:', Object.keys(sequelize.models || {}));
         return { success: false, message: 'Movie模型未初始化', data: [], total: 0 };
       }
-      const { page = 1, pageSize = 20, sortBy = 'premiered', actorId, genreId, studioId } = params;
+      const {
+        page = 1,
+        pageSize = 20,
+        sortBy = 'premiered',
+        actorId,
+        genreId,
+        studioId,
+        filterGenres,
+        filterYears
+      } = params;
       
       // 检查是否启用可播放过滤
       const filterPlayable = settingsStore.get('filterPlayable', false);
@@ -241,7 +278,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         });
       }
       
-      // 处理分类筛选
+      // 分类筛选：当前页 genreId 为单分类；filterGenres 为多选交集（影片须同时拥有所有选中分类）
       if (genreId) {
         include.push({
           model: sequelize.models.Genre,
@@ -257,10 +294,29 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           attributes: ['id', 'name']
         });
       }
+      if (Array.isArray(filterGenres) && filterGenres.length > 0) {
+        const names = filterGenres
+          .map(name => (typeof name === 'string' ? name.trim() : ''))
+          .filter(Boolean);
+        if (names.length > 0) {
+          const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+          if (movieIds && movieIds.length === 0) {
+            where.id = { [Op.in]: [] };
+          } else if (movieIds) {
+            where.id = { [Op.in]: movieIds };
+          }
+        }
+      }
       
       // 处理制作商筛选
       if (studioId) {
         where.studio_id = studioId;
+      }
+
+      // 年份筛选：并集（发行年份在任一年份之一即可）
+      const yearCond = buildYearOrCondition(filterYears);
+      if (yearCond) {
+        where.premiered = yearCond.premiered;
       }
       
       include.push({
@@ -828,7 +884,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         return { success: false, message: '数据库未初始化', data: [], total: 0 };
       }
       const Movie = sequelize.models.Movie;
-      const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = options;
+      const {
+        page = 1,
+        pageSize = 20,
+        sortBy = 'premiered-desc',
+        filterGenres,
+        filterYears
+      } = options;
       const order = getOrderFromSortBy(sortBy);
 
       // 检查是否启用可播放过滤
@@ -844,18 +906,39 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           [Op.like]: `${seriesPrefix}-%`
         }
       };
-
+      
       if (filterPlayable) {
         where.playable = true;
       }
 
+      const yearCond = buildYearOrCondition(filterYears);
+      if (yearCond) {
+        where.premiered = yearCond.premiered;
+      }
+
+      if (Array.isArray(filterGenres) && filterGenres.length > 0) {
+        const names = filterGenres
+          .map(name => (typeof name === 'string' ? name.trim() : ''))
+          .filter(Boolean);
+        if (names.length > 0) {
+          const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+          if (movieIds && movieIds.length === 0) {
+            where.id = { [Op.in]: [] };
+          } else if (movieIds) {
+            where.id = { [Op.in]: movieIds };
+          }
+        }
+      }
+
+      const include = [
+        { model: sequelize.models.Actor, through: { attributes: [] }, attributes: ['id', 'name'] },
+        { model: sequelize.models.Genre, through: { attributes: [] }, attributes: ['id', 'name'] },
+        { model: sequelize.models.Studio, attributes: ['id', 'name'] }
+      ];
+      
       const { count, rows: movies } = await Movie.findAndCountAll({
         where,
-        include: [
-          { model: sequelize.models.Actor, through: { attributes: [] }, attributes: ['id', 'name'] },
-          { model: sequelize.models.Genre, through: { attributes: [] }, attributes: ['id', 'name'] },
-          { model: sequelize.models.Studio, attributes: ['id', 'name'] }
-        ],
+        include,
         order,
         limit: pageSize,
         offset: (page - 1) * pageSize,
@@ -1131,7 +1214,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       
       const Movie = sequelize.models.Movie;
       const filterPlayable = settingsStore.get('filterPlayable', false);
-      const { page = 1, pageSize = 20, sortBy = 'premiered' } = params;
+      const {
+        page = 1,
+        pageSize = 20,
+        sortBy = 'premiered',
+        filterGenres,
+        filterYears
+      } = params;
       const order = getOrderFromSortBy(sortBy);
       let actorData;
       let where = {};
@@ -1152,6 +1241,11 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         if (filterPlayable) {
           where.playable = true;
         }
+
+        const yearCond = buildYearOrCondition(filterYears);
+        if (yearCond) {
+          where.premiered = yearCond.premiered;
+        }
         
         actorData = {
           id: `folder_${folderName}`,
@@ -1161,11 +1255,28 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         
         console.log('文件目录模式查询 - 文件夹名:', folderName, '查询条件:', JSON.stringify(where));
         
+        let include = [];
+        if (Array.isArray(filterGenres) && filterGenres.length > 0) {
+          const names = filterGenres
+            .map(name => (typeof name === 'string' ? name.trim() : ''))
+            .filter(Boolean);
+          if (names.length > 0) {
+            const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+            if (movieIds && movieIds.length === 0) {
+              where.id = { [Op.in]: [] };
+            } else if (movieIds) {
+              where.id = { [Op.in]: movieIds };
+            }
+          }
+        }
+
         const { count, rows } = await Movie.findAndCountAll({
           where,
+          include,
           order,
           limit: pageSize,
-          offset: (page - 1) * pageSize
+          offset: (page - 1) * pageSize,
+          distinct: include.length > 0
         });
         
         const moviesData = rows.map(movie => ({
@@ -1218,6 +1329,11 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         if (filterPlayable) {
           where.playable = true;
         }
+
+        const yearCond = buildYearOrCondition(filterYears);
+        if (yearCond) {
+          where.premiered = yearCond.premiered;
+        }
         
         const includeOptions = {
           model: ActorFromNfo,
@@ -1226,10 +1342,24 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           attributes: [],
           as: 'ActorsFromNfo'
         };
-        
+        let genreInclude = [];
+        if (Array.isArray(filterGenres) && filterGenres.length > 0) {
+          const names = filterGenres
+            .map(name => (typeof name === 'string' ? name.trim() : ''))
+            .filter(Boolean);
+          if (names.length > 0) {
+            const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+            if (movieIds && movieIds.length === 0) {
+              where.id = { [Op.in]: [] };
+            } else if (movieIds) {
+              where.id = { [Op.in]: movieIds };
+            }
+          }
+        }
+
         const { count, rows } = await Movie.findAndCountAll({
           where,
-          include: [includeOptions],
+          include: [includeOptions, ...genreInclude],
           order,
           limit: pageSize,
           offset: (page - 1) * pageSize,
@@ -1547,7 +1677,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       const Movie = sequelize.models.Movie;
       const Director = sequelize.models.Director;
       const filterPlayable = settingsStore.get('filterPlayable', false);
-      const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = params;
+      const {
+        page = 1,
+        pageSize = 20,
+        sortBy = 'premiered-desc',
+        filterGenres,
+        filterYears
+      } = params;
       const order = getOrderFromSortBy(sortBy);
       const where = {
         director_id: parseInt(id)
@@ -1556,13 +1692,34 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       if (filterPlayable) {
         where.playable = true;
       }
+
+      const yearCond = buildYearOrCondition(filterYears);
+      if (yearCond) {
+        where.premiered = yearCond.premiered;
+      }
+
+      let include = [];
+      if (Array.isArray(filterGenres) && filterGenres.length > 0) {
+        const names = filterGenres
+          .map(name => (typeof name === 'string' ? name.trim() : ''))
+          .filter(Boolean);
+        if (names.length > 0) {
+          const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+          if (movieIds && movieIds.length === 0) {
+            where.id = { [Op.in]: [] };
+          } else if (movieIds) {
+            where.id = { [Op.in]: movieIds };
+          }
+        }
+      }
       
       const { count, rows } = await Movie.findAndCountAll({
         where,
+        include,
         order,
         limit: parseInt(pageSize),
         offset: (parseInt(page) - 1) * parseInt(pageSize),
-        distinct: true
+        distinct: include.length > 0
       });
       
       const moviesData = rows.map(movie => ({
@@ -1613,7 +1770,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       const Movie = sequelize.models.Movie;
       const Studio = sequelize.models.Studio;
       const filterPlayable = settingsStore.get('filterPlayable', false);
-      const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = params;
+      const {
+        page = 1,
+        pageSize = 20,
+        sortBy = 'premiered-desc',
+        filterGenres,
+        filterYears
+      } = params;
       const order = getOrderFromSortBy(sortBy);
       const studioId = parseInt(id);
       if (isNaN(studioId)) {
@@ -1639,12 +1802,34 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       if (filterPlayable) {
         where.playable = true;
       }
+
+      const yearCond = buildYearOrCondition(filterYears);
+      if (yearCond) {
+        where.premiered = yearCond.premiered;
+      }
+
+      let include = [];
+      if (Array.isArray(filterGenres) && filterGenres.length > 0) {
+        const names = filterGenres
+          .map(name => (typeof name === 'string' ? name.trim() : ''))
+          .filter(Boolean);
+        if (names.length > 0) {
+          const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+          if (movieIds && movieIds.length === 0) {
+            where.id = { [Op.in]: [] };
+          } else if (movieIds) {
+            where.id = { [Op.in]: movieIds };
+          }
+        }
+      }
       
       const { count, rows } = await Movie.findAndCountAll({
         where,
+        include,
         order,
         limit: pageSize,
-        offset: (page - 1) * pageSize
+        offset: (page - 1) * pageSize,
+        distinct: include.length > 0
       });
       
       const moviesData = rows.map(movie => ({
@@ -1688,10 +1873,17 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       if (!keyword || keyword.trim() === '') {
         return { success: false, message: '请输入搜索关键词', data: [], total: 0 };
       }
-      const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = options;
+      const {
+        page = 1,
+        pageSize = 20,
+        sortBy = 'premiered-desc',
+        filterGenres,
+        filterYears
+      } = options;
       const order = getOrderFromSortBy(sortBy);
       const Movie = sequelize.models.Movie;
       const ActorFromNfo = sequelize.models.ActorFromNfo;
+      const Genre = sequelize.models.Genre;
       const filterPlayable = settingsStore.get('filterPlayable', false);
       const searchKeyword = `%${keyword.trim()}%`;
       const maxIds = 2000;
@@ -1737,15 +1929,43 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         return { success: true, data: [], total: 0 };
       }
 
+      let idList = ids;
+      if (Array.isArray(filterGenres) && filterGenres.length > 0) {
+        const names = filterGenres
+          .map(name => (typeof name === 'string' ? name.trim() : ''))
+          .filter(Boolean);
+        if (names.length > 0) {
+          const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+          if (movieIds && movieIds.length === 0) {
+            idList = [];
+          } else if (movieIds) {
+            const idSet = new Set(movieIds);
+            idList = ids.filter(id => idSet.has(id));
+          }
+        }
+      }
+      const where = {
+        id: { [Op.in]: idList }
+      };
+      if (filterPlayable) {
+        where.playable = true;
+      }
+      const yearCond = buildYearOrCondition(filterYears);
+      if (yearCond) {
+        where.premiered = yearCond.premiered;
+      }
+
+      const include = [{
+        model: ActorFromNfo,
+        through: { attributes: [] },
+        attributes: ['id', 'name'],
+        as: 'ActorsFromNfo',
+        required: false
+      }];
+
       const { count, rows: movies } = await Movie.findAndCountAll({
-        where: { id: { [Op.in]: ids } },
-        include: [{
-          model: ActorFromNfo,
-          through: { attributes: [] },
-          attributes: ['id', 'name'],
-          as: 'ActorsFromNfo',
-          required: false
-        }],
+        where,
+        include,
         order,
         limit: pageSize,
         offset: (page - 1) * pageSize,
@@ -1890,6 +2110,21 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           return { success: true, data: [], total: 0 };
         }
       }
+
+      // 顶部筛选器：分类交集（须同时拥有所有选中分类）
+      if (Array.isArray(params.filterGenres) && params.filterGenres.length > 0) {
+        const names = params.filterGenres
+          .map(name => (typeof name === 'string' ? name.trim() : ''))
+          .filter(Boolean);
+        if (names.length > 0) {
+          const movieIds = await getMovieIdsWithAllGenres(sequelize, names);
+          if (movieIds && movieIds.length === 0) {
+            where.id = { [Op.in]: [] };
+          } else if (movieIds) {
+            where.id = { [Op.in]: movieIds };
+          }
+        }
+      }
       
       // 演员筛选
       if (params.actor && params.actor.trim() !== '') {
@@ -1905,6 +2140,12 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           // 如果找不到匹配的演员，返回空结果
           return { success: true, data: [], total: 0 };
         }
+      }
+
+      // 顶部筛选器：年份并集
+      const yearCond = buildYearOrCondition(params.filterYears);
+      if (yearCond) {
+        where.premiered = yearCond.premiered;
       }
       
       const { page = 1, pageSize = 20, sortBy = 'premiered-desc' } = params;
