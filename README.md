@@ -24,19 +24,19 @@
 
 ## 界面预览
 
-![首页](images/javlibrary-01.jpg)
+![首页](images/javlibrary-01.png)
 *首页（日间/夜间模式）*
 
-![视图切换](images/javlibrary-02.jpg)
+![视图切换](images/javlibrary-02.png)
 *视图切换（文字/图文/缩图模式）*
 
-![详情页](images/javlibrary-03.jpg)
+![详情页](images/javlibrary-03.png)
 *详情页（夜间/日间模式）*
 
 ![收藏夹](images/javlibrary-04.png)
 *收藏夹*
 
-![影片搜索](images/javlibrary-05.jpg)
+![影片搜索](images/javlibrary-05.png)
 *简易搜索/多重搜索*
 
 ![应用设置](images/javlibrary-06.png)
