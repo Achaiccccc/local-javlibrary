@@ -34,6 +34,8 @@
           <slot name="left-extra" />
         </div>
         <div class="toolbar-right">
+          <!-- 抽奖入口：在视图模式左侧 -->
+          <slot name="before-view-mode" />
           <el-radio-group
             v-if="enableViewModeToggle"
             class="view-mode-toggle"
@@ -120,9 +122,20 @@
                 <div class="image-slot">暂无封面</div>
               </template>
             </el-image>
-            <div v-if="movie.playable" class="play-icon">
+            <div v-if="movie.playable" class="play-icon" @click.stop="$emit('playVideo', movie)">
               <el-icon :size="24" color="#67c23a">
                 <VideoPlay />
+              </el-icon>
+            </div>
+            <div
+              v-if="showFavoriteHeart"
+              class="favorite-icon"
+              :class="{ 'is-favorited': isFavorited(movie) }"
+              @click.stop="$emit('toggleFavorite', movie)"
+            >
+              <el-icon :size="20">
+                <StarFilled v-if="isFavorited(movie)" />
+                <Star v-else />
               </el-icon>
             </div>
           </div>
@@ -168,7 +181,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { useElementSize } from '@vueuse/core';
-import { VideoPlay } from '@element-plus/icons-vue';
+import { VideoPlay, Star, StarFilled } from '@element-plus/icons-vue';
 import { getImageCacheKey } from '../utils/imageLoader';
 
 const BASE_COL_WIDTH = 150;
@@ -220,7 +233,7 @@ function onPosterLeave() {
   hoveredPoster.value = null;
 }
 
-const emit = defineEmits(['rowClick', 'update:pageSize', 'update:currentPage', 'update:sortBy', 'update:viewMode']);
+const emit = defineEmits(['rowClick', 'update:pageSize', 'update:currentPage', 'update:sortBy', 'update:viewMode', 'playVideo', 'toggleFavorite']);
 
 function onPosterClick(movie) {
   hoveredPoster.value = null;
@@ -239,12 +252,18 @@ const props = defineProps({
   emptyText: { type: String, default: '暂无影片数据' },
   enableViewModeToggle: { type: Boolean, default: true },
   showPagination: { type: Boolean, default: true },
-  /**
-   * 图片加载函数：(movie) => void
-   * 默认什么都不做，由上层决定如何加载图片和写入缓存
-   */
-  loadMovieImage: { type: Function, default: null }
+  loadMovieImage: { type: Function, default: null },
+  /** 是否显示收藏爱心图标（图文模式） */
+  showFavoriteHeart: { type: Boolean, default: false },
+  /** 按影片 code 的收藏夹 id 列表，用于判断是否已收藏：{ [code]: string[] } */
+  favoriteFolderIdsByCode: { type: Object, default: () => ({}) }
 });
+
+function isFavorited(movie) {
+  if (!movie?.code) return false;
+  const ids = props.favoriteFolderIdsByCode[movie.code];
+  return Array.isArray(ids) && ids.length > 0;
+}
 
 const internalCurrentPage = computed({
   get: () => props.currentPage,
@@ -400,6 +419,30 @@ const onImageLoad = (movie) => {
   align-items: center;
   justify-content: center;
   z-index: 10;
+  cursor: pointer;
+}
+.favorite-icon {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  cursor: pointer;
+  color: #fff;
+}
+.favorite-icon.is-favorited {
+  color: #f56c6c;
+}
+.favorite-icon .el-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .image-slot {

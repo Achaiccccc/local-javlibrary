@@ -1,6 +1,6 @@
 {
   "name": "javlibrary-frontend",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
+    "@lucky-canvas/vue": "^0.1.11",
     "@vueuse/core": "^10.7.0",
     "dayjs": "^1.11.10",
     "element-plus": "^2.5.0",

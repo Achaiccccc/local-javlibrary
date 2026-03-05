@@ -105,9 +105,16 @@
                 <span v-else>未知</span>
               </el-descriptions-item>
             </el-descriptions>
-            <div style="margin-top: 20px;">
+            <div style="margin-top: 20px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
               <el-button v-if="movie.playable" type="success" @click="playVideo" icon="VideoPlay">
                 播放
+              </el-button>
+              <el-button
+                :type="detailFavoriteFolderIds.length > 0 ? 'danger' : 'default'"
+                @click="openFavoriteDialog"
+                :icon="detailFavoriteFolderIds.length > 0 ? StarFilled : Star"
+              >
+                {{ detailFavoriteFolderIds.length > 0 ? '取消收藏' : '收藏' }}
               </el-button>
               <el-button type="primary" @click="editMovie" icon="Edit">编辑</el-button>
               <el-button 
@@ -120,6 +127,12 @@
             </div>
           </div>
         </div>
+
+        <FavoriteFoldersDialog
+          v-model="favoriteDialogVisible"
+          :movie="movie"
+          @done="onFavoriteDialogDone"
+        />
 
         <!-- 预览图：仅当存在多于一张图（详情图+至少一张 extrafanart）时展示；大图轮播中下方显示页数 -->
         <div v-if="movie && hasPreviewImages" class="detail-section preview-section">
@@ -332,9 +345,10 @@ defineOptions({ name: 'MovieDetail' });
 import { ref, onMounted, computed, onBeforeMount, onBeforeUnmount } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { VideoPlay, FolderOpened, DocumentCopy, Edit } from '@element-plus/icons-vue';
+import { VideoPlay, FolderOpened, DocumentCopy, Edit, Star, StarFilled } from '@element-plus/icons-vue';
 import { loadImage as loadImageWithPriority, resumeBackgroundLoading } from '../utils/imageLoader';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
+import FavoriteFoldersDialog from '../components/FavoriteFoldersDialog.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -355,6 +369,8 @@ const previewImageUrls = ref([]);
 const previewVisible = ref(false);
 const previewCurrentIndex = ref(0);
 const editDialogVisible = ref(false);
+const favoriteDialogVisible = ref(false);
+const detailFavoriteFolderIds = ref([]);
 
 /** 仅当存在多于一张图（详情图 + 至少一张 extrafanart）时展示预览图区域 */
 const hasPreviewImages = computed(() => {
@@ -465,6 +481,14 @@ const loadMovie = async () => {
         }
       } catch (e) {
         console.error('加载详情扩展失败:', e);
+      }
+      if (result.data.code) {
+        try {
+          const favRes = await window.electronAPI.favorites.getFoldersContainingMovie(result.data.code);
+          detailFavoriteFolderIds.value = (favRes?.success && Array.isArray(favRes.data)) ? favRes.data : [];
+        } catch (_) {
+          detailFavoriteFolderIds.value = [];
+        }
       }
     } else {
       ElMessage.error('加载影片详情失败: ' + (result?.message || '未知错误'));
@@ -696,6 +720,21 @@ const playVideo = async () => {
     resumeBackgroundLoading();
   }
 };
+
+function openFavoriteDialog() {
+  favoriteDialogVisible.value = true;
+}
+
+async function onFavoriteDialogDone() {
+  if (movie.value?.code) {
+    try {
+      const res = await window.electronAPI.favorites.getFoldersContainingMovie(movie.value.code);
+      detailFavoriteFolderIds.value = (res?.success && Array.isArray(res.data)) ? res.data : [];
+    } catch (_) {
+      detailFavoriteFolderIds.value = [];
+    }
+  }
+}
 
 const openFileLocation = async () => {
   if (!movie.value || !movie.value.id) {

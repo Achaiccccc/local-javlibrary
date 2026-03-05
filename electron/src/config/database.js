@@ -3,36 +3,17 @@ const path = require('path');
 const { app } = require('electron');
 const fs = require('fs-extra');
 
-// 数据库文件路径（存储在用户数据目录）
-// 在开发环境中使用不同的数据库文件名，避免与生产环境共享数据
-const userDataPath = app.getPath('userData');
 const dbFileName = process.env.NODE_ENV === 'development' ? 'javlibrary-dev.db' : 'javlibrary.db';
-const dbPath = path.join(userDataPath, dbFileName);
+let sequelize = null;
 
-// 确保目录存在
-fs.ensureDirSync(userDataPath);
-
-// 创建Sequelize实例（使用sqlite3）
-// 注意：在开发环境中，如果 sqlite3 未编译，将使用现有的数据库文件
-const sequelize = new Sequelize({
-  dialect: 'sqlite',
-  storage: dbPath,
-  logging: console.log, // 临时启用日志以便调试
-  pool: {
-    max: 5,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
-  },
-  retry: {
-    max: 3
-  },
-  // 设置超时时间
-  timeout: 30000
-});
-
-// 初始化数据库
+/**
+ * 初始化数据库（用户数据存于 AppData，开发/正式通过 dbFileName 区分）
+ */
 async function initDatabase() {
+  const userDataPath = app.getPath('userData');
+  fs.ensureDirSync(userDataPath);
+  const dbPath = path.join(userDataPath, dbFileName);
+
   try {
     console.log('开始连接数据库，路径:', dbPath);
     console.log('数据库文件是否存在:', fs.existsSync(dbPath));
@@ -44,6 +25,15 @@ async function initDatabase() {
       const stats = fs.statSync(dbPath);
       console.log('数据库文件大小:', (stats.size / 1024).toFixed(2), 'KB');
     }
+
+    sequelize = new Sequelize({
+      dialect: 'sqlite',
+      storage: dbPath,
+      logging: console.log,
+      pool: { max: 5, min: 0, acquire: 30000, idle: 10000 },
+      retry: { max: 3 },
+      timeout: 30000
+    });
     
     // 添加超时处理
     const authPromise = sequelize.authenticate();

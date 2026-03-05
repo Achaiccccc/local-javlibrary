@@ -81,3 +81,25 @@ html[data-theme="dark"] body,
 html[data-theme="light"] body {
   background-color: var(--page-bg);
 }
+
+/* 列表页筛选器：tag 文字取消加粗（覆盖 .el-check-tag 默认 font-weight） */
+.filter-bar .el-check-tag {
+  font-weight: normal;
+}
+
+/* 列表页筛选器：日间模式下 tag 样式 */
+[data-theme="light"] .filter-bar .el-check-tag {
+  background-color: #e2e2e2;
+  color: #000;
+}
+[data-theme="light"] .filter-bar .el-check-tag:hover {
+  background-color: #888888;
+  color: #fff;
+}
+
+/* 选中态：背景 #409eff，文字白色 */
+[data-theme="light"] .filter-bar .el-check-tag.is-checked {
+  background-color: #409eff;
+  border-color: #409eff;
+  color: #fff;
+}

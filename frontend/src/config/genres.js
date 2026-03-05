@@ -331,6 +331,50 @@ export const genreCategories = [
   }
 ];
 
+// 列表页顶部筛选器分组配置（基于 genreCategories + 预开发分组）
+// 注意：不修改原有 genreCategories，仅在前端筛选 UI 中使用；类别与年份置顶，年份由新到旧
+export const filterGroups = [
+  // 预开发的「类别」分组（建设中，仅做 UI 展示，不参与当前筛选逻辑）
+  // {
+  //   key: 'type',
+  //   type: 'type',
+  //   label: '类别（建设中）',
+  //   options: [
+  //     { label: '全部', value: 'all' },
+  //     { label: '有码', value: 'censored' },
+  //     { label: '无码', value: 'uncensored' },
+  //     { label: 'FC2', value: 'fc2' },
+  //     { label: '其它', value: 'other' }
+  //   ]
+  // },
+  // 年份分组：2026→2001（最新在前）
+  {
+    key: 'year',
+    type: 'year',
+    label: '年份',
+    options: (() => {
+      const opts = [{ label: '全部', value: 'all' }];
+      for (let y = 2026; y >= 2001; y--) {
+        opts.push({ label: String(y), value: String(y) });
+      }
+      return opts;
+    })()
+  },
+  // 分类标签分组：直接复用所有标准分类，且在最前添加「全部」
+  ...genreCategories.map(category => ({
+    key: `genre_${category.name}`,
+    type: 'genre',
+    label: category.name,
+    options: [
+      { label: '全部', value: 'all' },
+      ...category.genres.map(name => ({
+        label: name,
+        value: name
+      }))
+    ]
+  }))
+];
+
 // 获取所有分类名称（去重）
 export function getAllGenreNames() {
   const allGenres = new Set();

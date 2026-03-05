@@ -3,7 +3,7 @@ const { dialog } = require('electron');
 const fs = require('fs-extra');
 const path = require('path');
 
-// 在开发环境中使用不同的配置名称，避免与生产环境共享数据
+// 用户数据存于 AppData（electron-store 默认），开发/正式环境通过 name 区分
 const store = new Store({
   name: process.env.NODE_ENV === 'development' ? 'javlibrary-dev' : 'javlibrary'
 });

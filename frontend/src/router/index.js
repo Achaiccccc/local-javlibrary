@@ -7,6 +7,16 @@ const routes = [
     component: () => import('../views/MovieListPage.vue')
   },
   {
+    path: '/favorites',
+    name: 'Favorites',
+    component: () => import('../views/FavoritesPage.vue')
+  },
+  {
+    path: '/favorite/:id',
+    name: 'FavoriteMovieList',
+    component: () => import('../views/MovieListPage.vue')
+  },
+  {
     path: '/actors',
     name: 'ActorCatalog',
     component: () => import('../views/ActorCatalog.vue')

@@ -11,14 +11,17 @@
         <el-menu-item index="/">
           <span>首页</span>
         </el-menu-item>
-        <el-menu-item index="/actors">
-          <span>目录</span>
+        <el-menu-item index="/favorites">
+          <span>收藏夹</span>
         </el-menu-item>
         <el-menu-item index="/genres">
           <span>分类</span>
         </el-menu-item>
         <el-menu-item index="/search">
           <span>搜索</span>
+        </el-menu-item>
+        <el-menu-item index="/actors">
+          <span>目录</span>
         </el-menu-item>
         <el-menu-item index="/settings">
           <span>设置</span>
@@ -48,7 +51,7 @@ const route = useRoute();
 const scanStore = useScanStore();
 const activeMenu = computed(() => route.path);
 
-const cachedViewNames = ['MovieListPage', 'Search', 'ActorCatalog', 'GenreCatalog', 'StudioCatalog', 'DirectorCatalog'];
+const cachedViewNames = ['MovieListPage', 'Search', 'FavoritesPage', 'ActorCatalog', 'GenreCatalog', 'StudioCatalog', 'DirectorCatalog'];
 
 const menuVisible = ref(true);
 let lastScrollTop = 0;

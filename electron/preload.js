@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 影片相关
   movies: {
     getList: (params) => ipcRenderer.invoke('movies:getList', params),
+    getRandomList: (params) => ipcRenderer.invoke('movies:getRandomList', params),
     getById: (id) => ipcRenderer.invoke('movies:getById', id),
     create: (data) => ipcRenderer.invoke('movies:create', data),
     update: (id, data) => ipcRenderer.invoke('movies:update', id, data),
@@ -99,5 +100,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 播放相关
   movie: {
     playVideo: (movieId) => ipcRenderer.invoke('movie:playVideo', movieId)
+  },
+
+  // 收藏夹（按识别码存储，扫描不清空）
+  favorites: {
+    getFolders: () => ipcRenderer.invoke('favorites:getFolders'),
+    createFolder: (name) => ipcRenderer.invoke('favorites:createFolder', name),
+    updateFolder: (id, name) => ipcRenderer.invoke('favorites:updateFolder', id, name),
+    deleteFolder: (id) => ipcRenderer.invoke('favorites:deleteFolder', id),
+    getFoldersContainingMovie: (movieCode) => ipcRenderer.invoke('favorites:getFoldersContainingMovie', movieCode),
+    setMovieFolders: (movieCode, folderIds) => ipcRenderer.invoke('favorites:setMovieFolders', movieCode, folderIds),
+    getMoviesByFolder: (folderId, options) => ipcRenderer.invoke('favorites:getMoviesByFolder', folderId, options)
   }
 });
