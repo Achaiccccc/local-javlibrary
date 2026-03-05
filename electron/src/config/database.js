@@ -7,20 +7,18 @@ const dbFileName = process.env.NODE_ENV === 'development' ? 'javlibrary-dev.db' 
 let sequelize = null;
 
 /**
- * 初始化数据库
- * @param {string} [basePath] - 应用数据根目录；不传则使用 app.getPath('userData')，传则使用 basePath/database/xxx.db
+ * 初始化数据库（用户数据存于 AppData，开发/正式通过 dbFileName 区分）
  */
-async function initDatabase(basePath) {
-  const root = basePath != null ? basePath : app.getPath('userData');
-  const dbDir = basePath != null ? path.join(root, 'database') : root;
-  fs.ensureDirSync(dbDir);
-  const dbPath = path.join(dbDir, dbFileName);
+async function initDatabase() {
+  const userDataPath = app.getPath('userData');
+  fs.ensureDirSync(userDataPath);
+  const dbPath = path.join(userDataPath, dbFileName);
 
   try {
     console.log('开始连接数据库，路径:', dbPath);
     console.log('数据库文件是否存在:', fs.existsSync(dbPath));
-    console.log('应用数据目录:', root);
-    console.log('应用数据目录是否存在:', fs.existsSync(root));
+    console.log('用户数据目录:', userDataPath);
+    console.log('用户数据目录是否存在:', fs.existsSync(userDataPath));
     
     // 如果数据库文件存在，显示文件大小
     if (fs.existsSync(dbPath)) {

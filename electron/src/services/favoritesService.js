@@ -1,13 +1,13 @@
+const { app } = require('electron');
 const fs = require('fs-extra');
 const path = require('path');
-const { getAppDataRoot } = require('../config/appDataRoot');
 
 const DEFAULT_FOLDER_ID = 'default';
 const DEFAULT_FOLDER_NAME = '默认收藏夹';
-const FILENAME = 'favorites.json';
+const FILENAME = process.env.NODE_ENV === 'development' ? 'favorites-dev.json' : 'favorites.json';
 
 function getFavoritesPath() {
-  return path.join(getAppDataRoot(), FILENAME);
+  return path.join(app.getPath('userData'), FILENAME);
 }
 
 /** 单条收藏：{ code, addedAt }，addedAt 为 ISO 字符串 */

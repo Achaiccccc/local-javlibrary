@@ -15,10 +15,13 @@ const { initDatabase } = require('./src/config/database');
 const { runStartupSync } = require('./src/services/sync');
 const { registerIpcHandlers, updateMainWindow } = require('./src/ipc/handlers');
 const scanState = require('./src/state/scanState');
-const { getAppDataRoot, ensureAppDataRoot, runMigrationFromUserData } = require('./src/config/appDataRoot');
+
+// 配置存储：用户数据存于 AppData，开发/正式环境通过 name 区分
+const store = new Store({
+  name: process.env.NODE_ENV === 'development' ? 'javlibrary-dev' : 'javlibrary'
+});
 
 let mainWindow = null;
-let store = null;
 
 // 创建主窗口
 function createWindow() {
@@ -156,10 +159,10 @@ function createWindow() {
   });
 }
 
-// 检查并设置data路径（传入 store，使用应用数据目录）
-async function checkAndSetDataPath(configStore) {
+// 检查并设置 data 路径
+async function checkAndSetDataPath() {
   const fs = require('fs');
-  let dataPath = configStore.get('dataPath');
+  let dataPath = store.get('dataPath');
   
   // 检查已保存的路径是否有效
   if (dataPath && fs.existsSync(dataPath)) {
@@ -170,8 +173,8 @@ async function checkAndSetDataPath(configStore) {
   const defaultDataPath = path.join(__dirname, '..', 'data');
   if (fs.existsSync(defaultDataPath)) {
     console.log('使用默认data路径:', defaultDataPath);
-    configStore.set('dataPath', defaultDataPath);
-    configStore.set('dataPaths', [defaultDataPath]);
+    store.set('dataPath', defaultDataPath);
+    store.set('dataPaths', [defaultDataPath]);
     return defaultDataPath;
   }
   
@@ -217,8 +220,8 @@ async function checkAndSetDataPath(configStore) {
 
     if (!result.canceled && result.filePaths.length > 0) {
       dataPath = result.filePaths[0];
-      configStore.set('dataPath', dataPath);
-      configStore.set('dataPaths', [dataPath]);
+      store.set('dataPath', dataPath);
+      store.set('dataPaths', [dataPath]);
       return dataPath;
     } else {
       // 用户取消了选择，退出应用
@@ -231,8 +234,8 @@ async function checkAndSetDataPath(configStore) {
     // 如果出错，尝试使用默认路径
     if (fs.existsSync(defaultDataPath)) {
       console.log('使用默认data路径作为后备:', defaultDataPath);
-      configStore.set('dataPath', defaultDataPath);
-      configStore.set('dataPaths', [defaultDataPath]);
+      store.set('dataPath', defaultDataPath);
+      store.set('dataPaths', [defaultDataPath]);
       return defaultDataPath;
     }
     throw error;
@@ -249,15 +252,6 @@ async function checkAndSetDataPath(configStore) {
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
 
-  const root = getAppDataRoot();
-  ensureAppDataRoot();
-  runMigrationFromUserData();
-
-  store = new Store({
-    name: process.env.NODE_ENV === 'development' ? 'javlibrary-dev' : 'javlibrary',
-    cwd: root
-  });
-  
   let dataPath = null;
   
   try {
@@ -267,7 +261,7 @@ app.whenReady().then(async () => {
     console.log('窗口已创建');
     
     console.log('检查data路径...');
-    dataPath = await checkAndSetDataPath(store);
+    dataPath = await checkAndSetDataPath();
     if (!dataPath) {
       console.log('未选择data路径，应用将退出');
       return;
@@ -301,7 +295,7 @@ app.whenReady().then(async () => {
     }
     
     console.log('开始初始化数据库（后台进行）...');
-    initDatabase(root).then(async () => {
+    initDatabase().then(async () => {
       console.log('数据库初始化完成');
       
       // 等待一小段时间，确保所有表都已经创建完成
