@@ -24,29 +24,26 @@
 
 ## 界面预览
 
-![首页](images/JavLibrary-01.png)
-*首页*
+![首页](images/javlibrary-01.jpg)
+*首页（日间/夜间模式）*
 
-![影片详情](images/JavLibrary-02.png)
-*影片详情*
+![视图切换](images/javlibrary-02.jpg)
+*视图切换（文字/图文/缩图模式）*
 
-![组合搜索](images/JavLibrary-04.png)
-*组合搜索*
+![详情页](images/javlibrary-03.jpg)
+*详情页（夜间/日间模式）*
 
-![应用设置](images/JavLibrary-03.png)
+![收藏夹](images/javlibrary-04.png)
+*收藏夹*
+
+![影片搜索](images/javlibrary-05.jpg)
+*简易搜索/多重搜索*
+
+![应用设置](images/javlibrary-06.png)
 *应用设置*
 
-![夜间模式](images/JavLibrary-05.png)
-*夜间模式*
-
-![缩图模式](images/JavLibrary-06.png)
-*缩图模式*
-
-![随机抽奖](images/JavLibrary-07.png)
+![随机抽奖](images/javlibrary-07.png)
 *随机抽奖*
-
-![收藏夹](images/JavLibrary-08.png)
-*收藏夹*
 
 ## 技术栈
 
