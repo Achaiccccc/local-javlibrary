@@ -11,7 +11,7 @@
               @change="handleCatalogChange"
               class="catalog-selector"
             >
-              <el-option label="女优" value="actor-actor" />
+              <el-option label="演员" value="actor-actor" />
               <el-option label="文件目录" value="actor-folder" />
               <el-option label="导演" value="director" />
               <el-option label="制作商" value="studio" />
@@ -90,7 +90,7 @@ const catalogType = computed(() => {
 const getCurrentCatalogTitle = () => {
   const { type, mode } = catalogType.value;
   if (type === 'actor') {
-    return mode === 'folder' ? '文件目录' : '女优目录';
+    return mode === 'folder' ? '文件目录' : '演员目录';
   } else if (type === 'director') {
     return '导演列表';
   } else if (type === 'studio') {

@@ -22,6 +22,10 @@
 - ✏️ **数据编辑**: 支持编辑影片信息，仅更新 NFO 中修改的字段、保留其余内容（建议使用前备份 NFO，确认符合预期后再批量使用）
 - 🎬 **视频播放**: 播放器开发不在本项目的考虑范围内，为调用系统默认播放器播放
 
+## 视频介绍
+
+📺 [观看视频介绍](https://www.bilibili.com/video/BV1LKPazVEnh/)
+
 ## 界面预览
 
 ![首页](images/javlibrary-01.png)
@@ -134,8 +138,8 @@ data 文件夹结构示例：
 data/
 ├── 文件夹目录1/
 │   ├── 作品文件夹1/
-│   │   ├── poster.jpg    # 封面（或 *ps.* / 文件名含 poster，如 MKMP-393-C-poster.jpg）
-│   │   ├── fanart.jpg    # 海报（或 *pl.* / 文件名含 fanart，如 MKMP-393-C-fanart.jpg）
+│   │   ├── poster.jpg    # 封面（或 *ps.* / 文件名含 poster，如 ABC-001-poster.jpg）
+│   │   ├── fanart.jpg    # 海报（或 *pl.* / 文件名含 fanart，如 ABC-001-fanart.jpg）
 │   │   ├── xxx.nfo       # 元数据文件（任意 .nfo 后缀均可）
 │   │   ├── video.mp4     # 视频文件（可选）
 │   │   └── extrafanart/  # 预览图文件夹（可选，详情页多图轮播；文件夹名含 extrafanart 即可）
@@ -146,7 +150,7 @@ data/
 ```
 
 - **NFO**：支持任意文件名的 `.nfo` 文件，不限于 `movie.nfo`
-- **封面/海报**：优先识别以 `ps`/`pl` 结尾的图片；其次按关键词匹配，文件名含 `poster` 为封面、含 `fanart` 为海报（支持 `poster.jpg`、`番号-分类-poster.jpg` 等）
+- **封面/海报**：优先识别以 `ps`/`pl` 结尾的图片；其次按关键词匹配，文件名含 `poster` 为封面、含 `fanart` 为海报（支持 `poster.jpg`、`标题-poster.jpg` 等）
 - **预览图**：作品文件夹下名称含 `extrafanart` 的子文件夹内图片会作为详情页预览图，与详情主图一起可点击轮播放大
 - **识别码**：NFO 中可使用 `<uniqueid>` 或 `<num>` 标签
 

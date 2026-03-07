@@ -28,7 +28,7 @@
               
               <div class="info-item">
                 <span class="info-label">GitHub：</span>
-                <span class="info-value info-placeholder">https://github.com/Achaiccccc/local-jav-lib</span>
+                <span class="info-value info-placeholder">https://github.com/Achaiccccc/local-javlibrary</span>
               </div>
               <p class="star-hint">如果觉得这个项目对你有帮助，欢迎点个 Star 支持一下。</p>
               <p class="star-hint">你的支持是作者更新维护最大的动力。</p>

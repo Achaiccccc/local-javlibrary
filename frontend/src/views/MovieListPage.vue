@@ -175,7 +175,7 @@ const pageKey = computed(() => {
 const headerTitle = computed(() => {
   switch (listType.value) {
     case 'home': return 'JavLibrary - 本地影视库';
-    case 'actor': return actorName.value || (viewModeFromQuery.value === 'folder' ? '文件目录详情' : '女优详情');
+    case 'actor': return actorName.value || (viewModeFromQuery.value === 'folder' ? '文件目录详情' : '演员详情');
     case 'genre': return genreName.value || '分类详情';
     case 'director': return directorName.value || '导演详情';
     case 'studio': return studioName.value || '制作商详情';
