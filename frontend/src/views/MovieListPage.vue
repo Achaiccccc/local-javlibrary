@@ -76,6 +76,7 @@
           :empty-text="emptyText"
           :enable-view-mode-toggle="true"
           :show-pagination="showPagination"
+          :route-version="routeVersion"
           @update:pageSize="handlePageSizeChange"
           @update:currentPage="handlePageChange"
           @update:sortBy="handleSortByChange"
@@ -206,6 +207,7 @@ const showPagination = computed(() => {
 
 const currentPage = ref(1);
 const slotDialogVisible = ref(false);
+const routeVersion = ref(0);
 
 function openSlotDialog() {
   slotDialogVisible.value = true;
@@ -578,10 +580,15 @@ function goBack() {
   }
 }
 
-watch(() => [route.path, route.params, route.query], () => {
-  syncCurrentPageFromState();
-  loadData();
-}, { deep: true });
+watch(
+  () => [route.path, route.params, route.query],
+  () => {
+    routeVersion.value += 1;
+    syncCurrentPageFromState();
+    loadData();
+  },
+  { deep: true }
+);
 
 onMounted(() => {
   resumeBackgroundLoading();

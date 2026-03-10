@@ -179,7 +179,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useElementSize } from '@vueuse/core';
 import { VideoPlay, Star, StarFilled } from '@element-plus/icons-vue';
 import { getImageCacheKey } from '../utils/imageLoader';
@@ -256,8 +256,18 @@ const props = defineProps({
   /** 是否显示收藏爱心图标（图文模式） */
   showFavoriteHeart: { type: Boolean, default: false },
   /** 按影片 code 的收藏夹 id 列表，用于判断是否已收藏：{ [code]: string[] } */
-  favoriteFolderIdsByCode: { type: Object, default: () => ({}) }
+  favoriteFolderIdsByCode: { type: Object, default: () => ({}) },
+  /** 列表页路由版本号：每次路由变化递增，用于清理缩图悬浮放大层 */
+  routeVersion: { type: Number, default: 0 }
 });
+
+watch(
+  () => props.routeVersion,
+  () => {
+    // 路由发生变化时，强制关闭悬浮放大框（包括鼠标侧键返回、前进等不触发 mouseleave 的场景）
+    hoveredPoster.value = null;
+  }
+);
 
 function isFavorited(movie) {
   if (!movie?.code) return false;

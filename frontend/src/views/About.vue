@@ -16,7 +16,7 @@
               </el-icon>
             </div>
             <h2 class="app-name">JavLibrary</h2>
-            <div class="version">v2.8.0</div>
+            <div class="version">v2.8.1</div>
             
             <el-divider />
             
