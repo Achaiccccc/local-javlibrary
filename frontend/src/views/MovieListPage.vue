@@ -854,6 +854,11 @@ watch(
   () => [route.path, route.params, route.query],
   () => {
     routeVersion.value += 1;
+    avatarPickerVisible.value = false;
+    actorProfileEditVisible.value = false;
+    slotDialogVisible.value = false;
+    favoriteDialogVisible.value = false;
+    avatarPreviewVisible.value = false;
     syncCurrentPageFromState();
     loadData();
   },

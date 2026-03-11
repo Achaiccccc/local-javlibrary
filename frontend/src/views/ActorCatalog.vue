@@ -96,8 +96,8 @@
 
 <script setup>
 defineOptions({ name: 'ActorCatalog' });
-import { ref, onMounted, onActivated, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted, onActivated, computed, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Edit, ZoomIn, ZoomOut } from '@element-plus/icons-vue';
 import { useScanStore } from '../stores/scanStore';
@@ -105,6 +105,7 @@ import ThemeSwitch from '../components/ThemeSwitch.vue';
 import ActorAvatarPickerDialog from '../components/ActorAvatarPickerDialog.vue';
 
 const router = useRouter();
+const route = useRoute();
 const scanStore = useScanStore();
 const lastRefreshedDataVersion = ref(0);
 const loading = ref(true);
@@ -358,6 +359,13 @@ onMounted(() => {
     loadFilterPlayable();
   });
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    avatarPickerVisible.value = false;
+  }
+);
 </script>
 
 <style scoped>

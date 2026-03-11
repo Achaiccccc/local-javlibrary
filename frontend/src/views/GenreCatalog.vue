@@ -95,8 +95,8 @@
 
 <script setup>
 defineOptions({ name: 'GenreCatalog' });
-import { ref, onMounted, onActivated, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted, onActivated, computed, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { defaultGenreCategories } from '../config/genres';
 import { useScanStore } from '../stores/scanStore';
@@ -104,6 +104,7 @@ import { useGenreCategoriesStore } from '../stores/genreCategoriesStore';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const router = useRouter();
+const route = useRoute();
 const scanStore = useScanStore();
 const genreStore = useGenreCategoriesStore();
 const lastRefreshedDataVersion = ref(0);
@@ -242,6 +243,13 @@ onMounted(async () => {
   await genreStore.load();
   loadGenres();
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    editDialogVisible.value = false;
+  }
+);
 
 function openEditDialog() {
   const categories =

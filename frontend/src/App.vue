@@ -77,11 +77,15 @@ const handleScroll = () => {
   lastScrollTop = currentScrollTop <= 0 ? 0 : currentScrollTop;
 };
 
-// 监听路由变化，在切换页面时暂停后台加载
+// 监听路由变化，在切换页面时暂停后台加载，并兜底解除全局滚动锁定
 watch(() => route.path, (newPath, oldPath) => {
   if (oldPath && newPath !== oldPath) {
-    // 路由切换时暂停后台加载
     pauseBackgroundLoading();
+    // 兜底：移除 body 上可能残留的滚动锁定
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.style.overflow = '';
+      document.body.classList.remove('el-overlay-parent--hidden');
+    }
     // 延迟恢复，让新页面有时间加载数据
     setTimeout(() => {
       resumeBackgroundLoading();

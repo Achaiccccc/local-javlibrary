@@ -381,7 +381,7 @@
 
 <script setup>
 defineOptions({ name: 'MovieDetail' });
-import { ref, onMounted, computed, onBeforeMount, onBeforeUnmount } from 'vue';
+import { ref, onMounted, computed, onBeforeMount, onBeforeUnmount, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { VideoPlay, FolderOpened, DocumentCopy, Edit, Star, StarFilled } from '@element-plus/icons-vue';
@@ -833,6 +833,14 @@ const goBack = () => {
     router.push('/');
   }
 };
+
+watch(
+  () => route.fullPath,
+  () => {
+    editDialogVisible.value = false;
+    favoriteDialogVisible.value = false;
+  }
+);
 
 onBeforeMount(() => {
   // 进入详情页时，滚动到顶部
