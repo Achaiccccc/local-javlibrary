@@ -1549,7 +1549,16 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       });
       console.log('[IPC] actors:checkProfileConflict - total other actors:', allActors.length);
 
+      // 计算当前演员的 canonicalId（若已被合并，则等于 merged_to_id；否则等于自身 id）
+      const selfCanonicalId = actor.merged_to_id || actor.id;
+
       for (const other of allActors) {
+        // 若对方记录已被软合并且 canonical 与当前演员一致，则视为同一人，不再提示重复合并
+        const otherCanonicalId = other.merged_to_id || other.id;
+        if (otherCanonicalId === selfCanonicalId) {
+          continue;
+        }
+
         const otherDisplay = (other.display_name && String(other.display_name).trim()) || null;
         const otherFormer = parseFormerNames(other.former_names);
         const candidateNames = new Set();
