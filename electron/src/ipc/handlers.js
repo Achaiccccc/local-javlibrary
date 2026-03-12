@@ -1420,7 +1420,8 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           const playableCount = movies.filter(m => m.playable === true || m.playable === 1).length;
           const item = {
             id: actor.id,
-            name: actor.name,
+            name: actor.name,                      // 原始 NFO 名称，作为唯一键与头像匹配
+            display_name: actor.display_name || null, // 显示名称，目录页展示时优先使用
             totalCount,
             playableCount,
             viewMode: 'actor',

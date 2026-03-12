@@ -68,7 +68,13 @@
                         </el-image>
                       </div>
                     </template>
-                    <div class="actor-name">{{ item.name }}</div>
+                    <div class="actor-name">
+                      {{
+                        item.display_name && item.display_name.trim()
+                          ? item.display_name.trim()
+                          : (item.name || '')
+                      }}
+                    </div>
                     <div class="actor-meta">
                       (<span :class="{ 'playable-count': item.playableCount > 0 }">{{ item.playableCount }}</span>/{{ item.totalCount }})
                     </div>
