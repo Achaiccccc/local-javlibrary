@@ -73,13 +73,27 @@
           @current-change="handleCurrentChange"
         >
           <template #default="{ data }">
-            <el-input
-              v-model="data.label"
-              size="small"
-              class="node-input"
-              :placeholder="data.parent ? '子分类名称' : '大类名称'"
-              @blur="trimNodeLabel(data)"
-            />
+            <div class="tree-node-row">
+              <el-input
+                v-model="data.label"
+                size="small"
+                class="node-input"
+                :placeholder="data.parent ? '子分类名称' : '大类名称'"
+                @blur="trimNodeLabel(data)"
+              />
+              <span
+                v-if="data.parent && getNodeStats(data.label)"
+                class="node-stats"
+              >
+                <span class="node-stats-playable">
+                  {{ getNodeStats(data.label).playableCount }}
+                </span>
+                /
+                <span class="node-stats-total">
+                  {{ getNodeStats(data.label).totalCount }}
+                </span>
+              </span>
+            </div>
           </template>
         </el-tree>
       </div>
@@ -110,6 +124,18 @@ const genreStore = useGenreCategoriesStore();
 const lastRefreshedDataVersion = ref(0);
 const loading = ref(true);
 const dbGenres = ref([]); // 数据库中的分类
+const dbGenreStatsMap = computed(() => {
+  const map = new Map();
+  dbGenres.value.forEach((g) => {
+    if (g && typeof g.name === 'string') {
+      map.set(g.name, {
+        playableCount: g.playableCount || 0,
+        totalCount: g.totalCount || 0
+      });
+    }
+  });
+  return map;
+});
 
 const editDialogVisible = ref(false);
 const treeData = ref([]);
@@ -200,6 +226,15 @@ const groupedGenres = computed(() => {
     };
   });
 });
+
+function getNodeStats(label) {
+  if (!label || typeof label !== 'string') return null;
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+  const stats = dbGenreStatsMap.value.get(trimmed);
+  if (!stats || !stats.totalCount) return null;
+  return stats;
+}
 
 const goToGenreDetail = async (genreId, genreName) => {
   if (genreId) {
@@ -467,5 +502,27 @@ async function saveTree() {
 
 .node-input {
   width: 220px;
+}
+
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.node-stats {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--content-subtitle-color);
+}
+
+.node-stats-playable {
+  color: #67c23a;
+  font-weight: 600;
+}
+
+.node-stats-total {
+  color: var(--content-title-color);
 }
 </style>

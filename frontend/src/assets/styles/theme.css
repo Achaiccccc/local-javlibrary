@@ -103,3 +103,20 @@ html[data-theme="light"] body {
   border-color: #409eff;
   color: #fff;
 }
+
+/* 日间模式下，分类页标题栏右侧操作按钮（编辑当前分类列表等）在蓝色头部上的样式与 hover 态 */
+[data-theme="light"] .page-header .header-action-button.el-button--primary.is-plain {
+  --el-button-bg-color: rgba(255, 255, 255, 0.16);
+  --el-button-text-color: #ffffff;
+  --el-button-border-color: rgba(255, 255, 255, 0.45);
+  background-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #ffffff;
+}
+
+[data-theme="light"] .page-header .header-action-button.el-button--primary.is-plain:hover {
+  --el-button-bg-color: rgba(255, 255, 255, 0.28);
+  --el-button-border-color: rgba(255, 255, 255, 0.65);
+  background-color: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.65);
+}
