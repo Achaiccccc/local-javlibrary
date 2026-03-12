@@ -1645,6 +1645,10 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         return { success: false, message: '待合并的演员不存在' };
       }
 
+      // 记录用于头像合并的名称信息
+      const targetNames = [];
+      const sourceNames = [];
+
       await sequelize.transaction(async (t) => {
         // 1. 迁移影片关联 movie_actors_from_nfo
         const sourceLinks = await MovieActorFromNfo.findAll({
@@ -1704,6 +1708,27 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           merged_to_id: tId
         }, { transaction: t });
       });
+
+      // 事务成功后，同步更新演员头像映射：将 source 相关名称下的头像候选合并到 target
+      try {
+        const namesTarget = [];
+        if (target.name && String(target.name).trim()) namesTarget.push(String(target.name).trim());
+        if (target.display_name && String(target.display_name).trim()) namesTarget.push(String(target.display_name).trim());
+        parseFormerNames(target.former_names).forEach(n => {
+          if (n && String(n).trim()) namesTarget.push(String(n).trim());
+        });
+        const namesSource = [];
+        if (source.name && String(source.name).trim()) namesSource.push(String(source.name).trim());
+        if (source.display_name && String(source.display_name).trim()) namesSource.push(String(source.display_name).trim());
+        parseFormerNames(source.former_names).forEach(n => {
+          if (n && String(n).trim()) namesSource.push(String(n).trim());
+        });
+        if (namesTarget.length && namesSource.length) {
+          actorAvatarService.mergeActorAvatars(namesTarget, namesSource);
+        }
+      } catch (e) {
+        console.warn('合并演员头像映射失败（忽略，不影响主流程）:', e.message || String(e));
+      }
 
       return { success: true };
     } catch (e) {

@@ -323,6 +323,93 @@ async function scanFromActorDataPath(rootPath, getActorsWithAliases = null) {
   return { success: true, actorCount, imageCount };
 }
 
+/**
+ * 在现有 actor-avatar-map 中合并头像候选：将 sourceNames 相关的 key 下的 candidates
+ * 合并到 targetNames 对应的 key 下，并删除多余 key。用于演员软合并后同步头像候选。
+ *
+ * @param {string[]} targetNames - 目标演员相关名称（name / display_name / former_names）
+ * @param {string[]} sourceNames - 被合并演员相关名称（name / display_name / former_names）
+ * @returns {boolean} 是否实际发生了合并
+ */
+function mergeActorAvatars(targetNames = [], sourceNames = []) {
+  if (!Array.isArray(targetNames) || !Array.isArray(sourceNames)) return false;
+  const cleanedTarget = targetNames
+    .filter(n => typeof n === 'string')
+    .map(n => n.trim())
+    .filter(Boolean);
+  const cleanedSource = sourceNames
+    .filter(n => typeof n === 'string')
+    .map(n => n.trim())
+    .filter(Boolean);
+  if (!cleanedTarget.length || !cleanedSource.length) return false;
+
+  const map = readMap();
+  const byActor = map.byActor || {};
+
+  const getKeyFromNames = (names) => {
+    for (const n of names) {
+      const k = getCanonicalKey(n);
+      if (k) return k;
+    }
+    return null;
+  };
+
+  const targetKey = getKeyFromNames(cleanedTarget);
+  if (!targetKey) return false;
+
+  const sourceKeys = new Set();
+  for (const n of cleanedSource) {
+    const k = getCanonicalKey(n);
+    if (k && k !== targetKey) {
+      sourceKeys.add(k);
+    }
+  }
+  if (sourceKeys.size === 0) return false;
+
+  if (!byActor[targetKey]) {
+    byActor[targetKey] = { candidates: [], selectedId: null };
+  }
+  const targetEntry = byActor[targetKey];
+  if (!Array.isArray(targetEntry.candidates)) {
+    targetEntry.candidates = [];
+  }
+  const existingIds = new Set(targetEntry.candidates.map(c => c && c.id).filter(Boolean));
+
+  let mergedAny = false;
+  for (const sk of sourceKeys) {
+    const srcEntry = byActor[sk];
+    if (!srcEntry || !Array.isArray(srcEntry.candidates) || srcEntry.candidates.length === 0) continue;
+    for (const c of srcEntry.candidates) {
+      if (!c || !c.id || existingIds.has(c.id)) continue;
+      existingIds.add(c.id);
+      targetEntry.candidates.push({ ...c });
+      mergedAny = true;
+    }
+    // 合并后删除源 key，避免 UI 中出现孤立的旧演员头像条目
+    delete byActor[sk];
+  }
+
+  if (!mergedAny) return false;
+
+  // 校正 selectedId：若原选中项仍存在则保留；否则选第一个候选
+  if (targetEntry.candidates.length > 0) {
+    if (!targetEntry.selectedId) {
+      targetEntry.selectedId = targetEntry.candidates[0].id;
+    } else {
+      const stillValid = targetEntry.candidates.some(c => c && c.id === targetEntry.selectedId);
+      if (!stillValid) {
+        targetEntry.selectedId = targetEntry.candidates[0].id;
+      }
+    }
+  } else {
+    targetEntry.selectedId = null;
+  }
+
+  map.byActor = byActor;
+  writeMap(map);
+  return true;
+}
+
 module.exports = {
   getMapPath,
   readMap,
@@ -331,5 +418,6 @@ module.exports = {
   getActorAvatarSummaryAsync,
   getActorAvatarCandidates,
   setActorAvatarSelection,
-  scanFromActorDataPath
+  scanFromActorDataPath,
+  mergeActorAvatars
 };
