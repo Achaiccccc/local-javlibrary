@@ -300,7 +300,7 @@ const goToDetail = (item) => {
 // 根据设置过滤项目
 const filteredItems = computed(() => {
   if (!filterPlayable.value) {
-    return actors.value;
+    return actors.value.filter(item => item.totalCount > 0);
   }
   // 仅显示有可播放影片的项目
   return actors.value.filter(item => item.playableCount > 0);
