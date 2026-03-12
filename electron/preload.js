@@ -21,7 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getList: (params) => ipcRenderer.invoke('actors:getList', params),
     getById: (id, params) => ipcRenderer.invoke('actors:getById', id, params),
     getMovies: (id, params) => ipcRenderer.invoke('actors:getMovies', id, params),
-    updateProfile: (actorId, payload) => ipcRenderer.invoke('actors:updateProfile', actorId, payload)
+    updateProfile: (actorId, payload) => ipcRenderer.invoke('actors:updateProfile', actorId, payload),
+    checkProfileConflict: (actorId, payload) => ipcRenderer.invoke('actors:checkProfileConflict', actorId, payload),
+    merge: (targetId, sourceId) => ipcRenderer.invoke('actors:merge', targetId, sourceId)
   },
   
   // 分类相关

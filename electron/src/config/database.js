@@ -330,12 +330,13 @@ async function initDatabase() {
               }
             }
           }
-          // actors_from_nfo：显示名与曾用名（仅应用库，不写 NFO）
+          // actors_from_nfo：显示名与曾用名 + 软合并字段（仅应用库，不写 NFO）
           if (existingTables.includes('actors_from_nfo')) {
             try {
               const [actorCols] = await sequelize.query(`PRAGMA table_info(actors_from_nfo)`);
               const hasDisplayName = actorCols.some(c => c.name === 'display_name');
               const hasFormerNames = actorCols.some(c => c.name === 'former_names');
+              const hasMergedToId = actorCols.some(c => c.name === 'merged_to_id');
               if (!hasDisplayName) {
                 await sequelize.query(`ALTER TABLE actors_from_nfo ADD COLUMN display_name TEXT`);
                 console.log('actors_from_nfo.display_name 已添加');
@@ -344,8 +345,12 @@ async function initDatabase() {
                 await sequelize.query(`ALTER TABLE actors_from_nfo ADD COLUMN former_names TEXT`);
                 console.log('actors_from_nfo.former_names 已添加');
               }
+              if (!hasMergedToId) {
+                await sequelize.query(`ALTER TABLE actors_from_nfo ADD COLUMN merged_to_id INTEGER`);
+                console.log('actors_from_nfo.merged_to_id 已添加');
+              }
             } catch (actorColErr) {
-              console.warn('添加 actors_from_nfo 显示名/曾用名字段失败:', actorColErr.message);
+              console.warn('添加 actors_from_nfo 扩展字段失败:', actorColErr.message);
               try {
                 await sequelize.sync({ alter: true, force: false });
               } catch (e) {}

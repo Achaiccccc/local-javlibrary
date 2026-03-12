@@ -93,7 +93,7 @@
                           :class="{ disabled: !actor.inDatabase }"
                           @click="actor.inDatabase && goToActor(actor.id)"
                         >
-                          {{ actor.name }}
+                          {{ actor.display_name && actor.display_name.trim() ? actor.display_name.trim() : (actor.name || '') }}
                         </div>
                       </div>
                     </div>
@@ -111,7 +111,7 @@
                       }"
                       @click="actor.inDatabase && goToActor(actor.id)"
                     >
-                      {{ actor.name }}
+                      {{ actor.display_name && actor.display_name.trim() ? actor.display_name.trim() : (actor.name || '') }}
                     </el-link>
                   </div>
                 </div>

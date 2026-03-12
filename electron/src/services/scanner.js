@@ -233,6 +233,15 @@ async function scanDataFolder(dataPath, dataPathIndex = 0, progressCallback = nu
                 defaults: { name: actorName },
                 transaction: t
               });
+              // 若该演员记录已被软合并，始终挂载到 canonical 记录上
+              const targetActorId = nfoActor.merged_to_id || nfoActor.id;
+              if (targetActorId !== nfoActor.id) {
+                const canonical = await ActorFromNfo.findByPk(targetActorId, { transaction: t });
+                if (canonical) {
+                  await movie.addActorsFromNfo(canonical, { transaction: t });
+                  continue;
+                }
+              }
               await movie.addActorsFromNfo(nfoActor, { transaction: t });
             }
           }

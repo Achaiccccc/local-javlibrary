@@ -96,7 +96,7 @@
 
 <script setup>
 defineOptions({ name: 'ActorCatalog' });
-import { ref, onMounted, onActivated, computed, watch } from 'vue';
+import { ref, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Edit, ZoomIn, ZoomOut } from '@element-plus/icons-vue';
@@ -317,6 +317,13 @@ onActivated(() => {
   }
 });
 
+function onActorProfileChanged() {
+  const { type } = catalogType.value;
+  if (type === 'actor') {
+    loadCatalog();
+  }
+}
+
 onMounted(() => {
   loadFilterPlayable();
   loadCatalog();
@@ -358,6 +365,16 @@ onMounted(() => {
     console.log('过滤设置已更改，重新加载过滤设置');
     loadFilterPlayable();
   });
+
+  try {
+    window.addEventListener('actorProfileChanged', onActorProfileChanged);
+  } catch (_) {}
+});
+
+onBeforeUnmount(() => {
+  try {
+    window.removeEventListener('actorProfileChanged', onActorProfileChanged);
+  } catch (_) {}
 });
 
 watch(

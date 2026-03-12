@@ -696,7 +696,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         { 
           model: ActorFromNfo, 
           through: { attributes: [] }, 
-          attributes: ['id', 'name'],
+          attributes: ['id', 'name', 'display_name', 'former_names'],
           as: 'ActorsFromNfo'
         },
         { model: sequelize.models.Genre, through: { attributes: [] }, attributes: ['id', 'name'] },
@@ -735,7 +735,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       // 处理关联数据 - 所有演员数据均来自NFO，都在数据库中；附带演员头像摘要（若已配置演员数据路径）
       const dbActors = movie.ActorsFromNfo && Array.isArray(movie.ActorsFromNfo) 
         ? movie.ActorsFromNfo.map(actor => {
-            const base = { id: actor.id, name: actor.name, inDatabase: true };
+            const base = {
+              id: actor.id,
+              name: actor.name,
+              display_name: actor.display_name || null,
+              former_names: parseFormerNames(actor.former_names),
+              inDatabase: true
+            };
             base.avatar = attachAvatarToActor(actor.name);
             return base;
           })
@@ -1502,6 +1508,83 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
     }
   }
 
+  // 检查演员显示名/曾用名是否与其他演员产生冲突，仅返回第一个冲突目标
+  ipcMain.handle('actors:checkProfileConflict', async (event, actorId, payload = {}) => {
+    try {
+      console.log('[IPC] actors:checkProfileConflict called', { actorId, payload });
+      const sequelize = getSequelize();
+      if (!sequelize || !sequelize.models?.ActorFromNfo) {
+        console.warn('[IPC] actors:checkProfileConflict - DB not ready');
+        return { success: false, message: '数据库未初始化' };
+      }
+      const id = parseInt(actorId, 10);
+      if (isNaN(id)) {
+        console.warn('[IPC] actors:checkProfileConflict - invalid actorId', actorId);
+        return { success: false, message: '无效的演员ID' };
+      }
+      const ActorFromNfo = sequelize.models.ActorFromNfo;
+      const actor = await ActorFromNfo.findByPk(id);
+      if (!actor) {
+        console.warn('[IPC] actors:checkProfileConflict - actor not found', id);
+        return { success: false, message: '演员不存在' };
+      }
+
+      const newDisplayName = (typeof payload.displayName === 'string' ? payload.displayName.trim() : '') || null;
+      const newFormerNamesArr = Array.isArray(payload.formerNames)
+        ? payload.formerNames.map(n => (typeof n === 'string' ? n.trim() : '')).filter(Boolean)
+        : [];
+
+      if (!newDisplayName && newFormerNamesArr.length === 0) {
+        console.log('[IPC] actors:checkProfileConflict - nothing to check');
+        return { success: true, hasConflict: false };
+      }
+
+      const namesToCheck = new Set();
+      if (newDisplayName) namesToCheck.add(newDisplayName);
+      newFormerNamesArr.forEach(n => namesToCheck.add(n));
+
+      const allActors = await ActorFromNfo.findAll({
+        where: { id: { [Op.ne]: id } }
+      });
+      console.log('[IPC] actors:checkProfileConflict - total other actors:', allActors.length);
+
+      for (const other of allActors) {
+        const otherDisplay = (other.display_name && String(other.display_name).trim()) || null;
+        const otherFormer = parseFormerNames(other.former_names);
+        const candidateNames = new Set();
+        if (other.name && String(other.name).trim()) candidateNames.add(String(other.name).trim());
+        if (otherDisplay) candidateNames.add(otherDisplay);
+        otherFormer.forEach(n => candidateNames.add(n));
+
+        for (const n of namesToCheck) {
+          if (candidateNames.has(n)) {
+            console.log('[IPC] actors:checkProfileConflict - found conflict', {
+              conflictActorId: other.id,
+              name: n
+            });
+            return {
+              success: true,
+              hasConflict: true,
+              conflict: {
+                actorId: other.id,
+                name: n,
+                actorDisplayName: otherDisplay || other.name || '',
+                actorFormerNames: otherFormer
+              }
+            };
+          }
+        }
+      }
+
+      console.log('[IPC] actors:checkProfileConflict - no conflict');
+      return { success: true, hasConflict: false };
+    } catch (e) {
+      console.error('[IPC] actors:checkProfileConflict error', e);
+      return { success: false, message: e?.message || String(e) };
+    }
+  });
+
+  // 更新演员显示名与曾用名（不修改 name，不处理合并）
   ipcMain.handle('actors:updateProfile', async (event, actorId, payload = {}) => {
     try {
       const sequelize = getSequelize();
@@ -1524,6 +1607,94 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       }
       if (Object.keys(updates).length === 0) return { success: true };
       await actor.update(updates);
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e?.message || String(e) };
+    }
+  });
+
+  // 软合并演员：保留 targetId，迁移 sourceId 的影片关联和别名信息，然后将 sourceId 标记为合并到 targetId
+  ipcMain.handle('actors:merge', async (event, targetId, sourceId) => {
+    try {
+      const sequelize = getSequelize();
+      if (!sequelize || !sequelize.models?.ActorFromNfo || !sequelize.models?.MovieActorFromNfo) {
+        return { success: false, message: '数据库未初始化' };
+      }
+      const ActorFromNfo = sequelize.models.ActorFromNfo;
+      const MovieActorFromNfo = sequelize.models.MovieActorFromNfo;
+
+      const tId = parseInt(targetId, 10);
+      const sId = parseInt(sourceId, 10);
+      if (isNaN(tId) || isNaN(sId) || tId === sId) {
+        return { success: false, message: '无效的合并参数' };
+      }
+
+      const target = await ActorFromNfo.findByPk(tId);
+      const source = await ActorFromNfo.findByPk(sId);
+      if (!target || !source) {
+        return { success: false, message: '待合并的演员不存在' };
+      }
+
+      await sequelize.transaction(async (t) => {
+        // 1. 迁移影片关联 movie_actors_from_nfo
+        const sourceLinks = await MovieActorFromNfo.findAll({
+          where: { actor_from_nfo_id: sId },
+          transaction: t
+        });
+
+        if (sourceLinks.length > 0) {
+          const existingTargetLinks = await MovieActorFromNfo.findAll({
+            where: { actor_from_nfo_id: tId },
+            transaction: t
+          });
+          const existingMovieIds = new Set(existingTargetLinks.map(l => l.movie_id));
+
+          for (const link of sourceLinks) {
+            if (!existingMovieIds.has(link.movie_id)) {
+              await MovieActorFromNfo.create({
+                movie_id: link.movie_id,
+                actor_from_nfo_id: tId
+              }, { transaction: t });
+            }
+          }
+
+          await MovieActorFromNfo.destroy({
+            where: { actor_from_nfo_id: sId },
+            transaction: t
+          });
+        }
+
+        // 2. 合并别名到 target.former_names（保留 target 原有 display_name / former_names，不改 name）
+        const targetFormer = parseFormerNames(target.former_names);
+        const mergedFormerSet = new Set(targetFormer);
+
+        const sourceNames = [];
+        if (source.name && String(source.name).trim()) sourceNames.push(String(source.name).trim());
+        if (source.display_name && String(source.display_name).trim()) sourceNames.push(String(source.display_name).trim());
+        parseFormerNames(source.former_names).forEach(n => sourceNames.push(n));
+
+        sourceNames.forEach(n => {
+          if (n && typeof n === 'string' && n.trim()) mergedFormerSet.add(n.trim());
+        });
+
+        // 不在曾用名中重复保留与当前 display_name 完全相同的名称
+        const targetDisplayTrim = target.display_name && String(target.display_name).trim();
+        if (targetDisplayTrim) {
+          mergedFormerSet.delete(targetDisplayTrim);
+        }
+
+        const mergedFormer = Array.from(mergedFormerSet);
+
+        await target.update({
+          former_names: mergedFormer.length ? JSON.stringify(mergedFormer) : null
+        }, { transaction: t });
+
+        // 3. 将 source 标记为已合并到 target
+        await source.update({
+          merged_to_id: tId
+        }, { transaction: t });
+      });
+
       return { success: true };
     } catch (e) {
       return { success: false, message: e?.message || String(e) };

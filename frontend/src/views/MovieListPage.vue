@@ -228,7 +228,7 @@
 defineOptions({ name: 'MovieListPage' });
 import { ref, computed, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowDown, ArrowUp, QuestionFilled, Edit } from '@element-plus/icons-vue';
 import MovieListLayout from '../components/MovieListLayout.vue';
 import ActorAvatarPickerDialog from '../components/ActorAvatarPickerDialog.vue';
@@ -375,19 +375,87 @@ async function saveActorProfile() {
   const displayName = typeof editDisplayName.value === 'string' ? editDisplayName.value.trim() : '';
   const formerNames = editFormerNames.value.map(n => (typeof n === 'string' ? n.trim() : '')).filter(Boolean);
   try {
-    const res = await window.electronAPI.actors.updateProfile(id, { displayName: displayName || null, formerNames });
-    if (res?.success) {
-      actorProfile.value = {
-        ...actorProfile.value,
-        display_name: displayName || null,
-        former_names: formerNames
-      };
-      actorProfileEditVisible.value = false;
-      ElMessage.success('已保存');
-    } else {
-      ElMessage.error(res?.message || '保存失败');
+    console.debug('[ActorProfile] saveActorProfile start', {
+      id,
+      displayName,
+      formerNames
+    });
+    // 先检查名称/曾用名是否与其他演员产生冲突
+    const check = await window.electronAPI.actors.checkProfileConflict?.(id, {
+      displayName: displayName || null,
+      formerNames
+    });
+    console.debug('[ActorProfile] checkProfileConflict result', check);
+    let needMerge = false;
+    let mergeTargetId = null;
+    if (check?.success && check.hasConflict && check.conflict?.actorId && check.conflict?.name) {
+      const targetId = check.conflict.actorId;
+      const name = check.conflict.name;
+      const otherDisplayName = (check.conflict.actorDisplayName && String(check.conflict.actorDisplayName).trim()) || '';
+      const otherFormerNames = Array.isArray(check.conflict.actorFormerNames)
+        ? check.conflict.actorFormerNames.filter(n => typeof n === 'string' && n.trim())
+        : [];
+      const otherLabel = otherDisplayName || '未知演员';
+      const formerLabel = otherFormerNames.length ? `（曾用名：${otherFormerNames.join('、')}）` : '';
+      const confirmMsg =
+        `名称「${name}」与演员「${otherLabel}」${formerLabel}的名称或曾用名存在冲突。\n\n` +
+        `是否将当前演员与该演员合并为同一人？`;
+      try {
+        await ElMessageBox.confirm(confirmMsg, '合并演员确认', {
+          confirmButtonText: '合并',
+          cancelButtonText: '不合并',
+          type: 'warning'
+        });
+        needMerge = true;
+        mergeTargetId = targetId;
+        console.debug('[ActorProfile] user chose MERGE', { mergeTargetId });
+      } catch {
+        needMerge = false;
+        console.debug('[ActorProfile] user chose NOT MERGE');
+      }
     }
+
+    // 先保存当前演员的显示名与曾用名
+    const res = await window.electronAPI.actors.updateProfile(id, { displayName: displayName || null, formerNames });
+    if (!res?.success) {
+      ElMessage.error(res?.message || '保存失败');
+      return;
+    }
+
+    actorProfile.value = {
+      ...actorProfile.value,
+      display_name: displayName || null,
+      former_names: formerNames
+    };
+
+    // 通知目录页等使用处刷新演员列表
+    try {
+      window.dispatchEvent(new CustomEvent('actorProfileChanged', { detail: { actorId: id } }));
+    } catch (_) {}
+
+    // 如需合并，则按「保留更早存在的那条」的规则执行软合并
+    if (needMerge && mergeTargetId != null && mergeTargetId !== id) {
+      const target = Number(mergeTargetId);
+      const self = Number(id);
+      const targetIdForMerge = Math.min(target, self);
+      const sourceIdForMerge = Math.max(target, self);
+      console.debug('[ActorProfile] call actors.merge', {
+        targetIdForMerge,
+        sourceIdForMerge
+      });
+      const mergeRes = await window.electronAPI.actors.merge?.(targetIdForMerge, sourceIdForMerge);
+      console.debug('[ActorProfile] merge result', mergeRes);
+      if (!mergeRes?.success) {
+        ElMessage.error(mergeRes?.message || '合并演员失败');
+      } else {
+        ElMessage.success('已合并演员数据');
+      }
+    }
+
+    actorProfileEditVisible.value = false;
+    ElMessage.success('已保存');
   } catch (e) {
+    console.error('[ActorProfile] saveActorProfile error', e);
     ElMessage.error(e?.message || '保存失败');
   }
 }
