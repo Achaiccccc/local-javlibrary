@@ -20,6 +20,20 @@ function toSimplified(str) {
 const MAP_FILENAME = process.env.NODE_ENV === 'development' ? 'actor-avatar-map-dev.json' : 'actor-avatar-map.json';
 let cachedMap = null;
 
+const ACTOR_AVATAR_PREFIX = 'actor-avatar://localhost/';
+
+// 轻量级缓存：relPath -> actor-avatar 协议 URL（渲染进程不能直接加载 file://，改用自定义协议）
+const protocolUrlCache = new Map();
+
+function getActorAvatarProtocolUrl(relPath) {
+  if (!relPath || typeof relPath !== 'string') return null;
+  const cached = protocolUrlCache.get(relPath);
+  if (cached) return cached;
+  const url = ACTOR_AVATAR_PREFIX + encodeURIComponent(relPath);
+  protocolUrlCache.set(relPath, url);
+  return url;
+}
+
 function getMapPath() {
   return path.join(app.getPath('userData'), MAP_FILENAME);
 }
@@ -95,26 +109,7 @@ function getActorAvatarSummary(actorName, actorDataPath) {
   const selectedId = entry.selectedId || entry.candidates[0].id;
   const chosen = entry.candidates.find(c => c.id === selectedId) || entry.candidates[0];
   const relPath = chosen.id;
-  const absPath = path.join(actorDataPath, relPath);
-  let url = null;
-  try {
-    if (fs.existsSync(absPath)) {
-      const buf = fs.readFileSync(absPath);
-      const ext = path.extname(absPath).toLowerCase();
-      const mime =
-        ext === '.png'
-          ? 'image/png'
-          : ext === '.webp'
-          ? 'image/webp'
-          : ext === '.gif'
-          ? 'image/gif'
-          : 'image/jpeg';
-      url = `data:${mime};base64,${buf.toString('base64')}`;
-    }
-  } catch (e) {
-    console.error('getActorAvatarSummary 读取头像失败:', e);
-    url = null;
-  }
+  const url = getActorAvatarProtocolUrl(relPath);
   return {
     hasAvatar: true,
     hasMultiple: entry.candidates.length > 1,
@@ -124,7 +119,7 @@ function getActorAvatarSummary(actorName, actorDataPath) {
 }
 
 /**
- * 异步版头像摘要：读图不阻塞主进程，用于「确认换头像」后刷新，避免卡顿
+ * 异步版头像摘要：用于「确认换头像」后刷新等
  */
 async function getActorAvatarSummaryAsync(actorName, actorDataPath) {
   const key = getCanonicalKey(actorName);
@@ -139,27 +134,7 @@ async function getActorAvatarSummaryAsync(actorName, actorDataPath) {
   const selectedId = entry.selectedId || entry.candidates[0].id;
   const chosen = entry.candidates.find(c => c.id === selectedId) || entry.candidates[0];
   const relPath = chosen.id;
-  const absPath = path.join(actorDataPath, relPath);
-  let url = null;
-  try {
-    const exists = await fs.pathExists(absPath);
-    if (exists) {
-      const buf = await fs.readFile(absPath);
-      const ext = path.extname(absPath).toLowerCase();
-      const mime =
-        ext === '.png'
-          ? 'image/png'
-          : ext === '.webp'
-          ? 'image/webp'
-          : ext === '.gif'
-          ? 'image/gif'
-          : 'image/jpeg';
-      url = `data:${mime};base64,${buf.toString('base64')}`;
-    }
-  } catch (e) {
-    console.error('getActorAvatarSummaryAsync 读取头像失败:', e);
-    url = null;
-  }
+  const url = getActorAvatarProtocolUrl(relPath);
   return {
     hasAvatar: true,
     hasMultiple: entry.candidates.length > 1,
@@ -183,26 +158,7 @@ function getActorAvatarCandidates(actorName, actorDataPath) {
   }
   const selectedId = entry.selectedId || entry.candidates[0].id;
   const candidates = entry.candidates.map(c => {
-    const absPath = path.join(actorDataPath, c.id);
-    let url = null;
-    try {
-      if (fs.existsSync(absPath)) {
-        const buf = fs.readFileSync(absPath);
-        const ext = path.extname(absPath).toLowerCase();
-        const mime =
-          ext === '.png'
-            ? 'image/png'
-            : ext === '.webp'
-            ? 'image/webp'
-            : ext === '.gif'
-            ? 'image/gif'
-            : 'image/jpeg';
-        url = `data:${mime};base64,${buf.toString('base64')}`;
-      }
-    } catch (e) {
-      console.error('getActorAvatarCandidates 读取头像失败:', e);
-      url = null;
-    }
+    const url = getActorAvatarProtocolUrl(c.id);
     return { id: c.id, group: c.group, srcFile: c.srcFile, targetFile: c.targetFile, url };
   });
   return { candidates, selectedId };

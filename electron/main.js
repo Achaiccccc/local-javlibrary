@@ -93,7 +93,7 @@ function createWindow() {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* data: blob:; img-src 'self' data: http://localhost:* file://*;"]
+        'Content-Security-Policy': ["default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* data: blob:; img-src 'self' data: http://localhost:* file: actor-avatar:;"]
       }
     });
   });
@@ -251,6 +251,41 @@ async function checkAndSetDataPath() {
 // 应用准备就绪
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
+
+  // 注册演员头像自定义协议，避免渲染进程直接加载 file:// 被安全策略拦截
+  const { protocol } = require('electron');
+  protocol.registerFileProtocol('actor-avatar', (request, callback) => {
+    try {
+      const actorDataPath = store.get('actorDataPath', null);
+      if (!actorDataPath) {
+        callback({ error: -2 });
+        return;
+      }
+      // request.url 形如 actor-avatar://localhost/Content%2Fy-Minnano%2Ffile.jpg
+      const prefix = 'actor-avatar://localhost/';
+      if (!request.url.startsWith(prefix)) {
+        callback({ error: -2 });
+        return;
+      }
+      const encoded = request.url.slice(prefix.length);
+      const relPath = decodeURIComponent(encoded);
+      if (!relPath || relPath.includes('..')) {
+        callback({ error: -2 });
+        return;
+      }
+      const absPath = path.join(actorDataPath, relPath);
+      const normalized = path.normalize(absPath);
+      const rootNormalized = path.normalize(path.resolve(actorDataPath));
+      if (!normalized.startsWith(rootNormalized)) {
+        callback({ error: -2 });
+        return;
+      }
+      callback({ path: normalized });
+    } catch (e) {
+      console.error('actor-avatar protocol error:', e);
+      callback({ error: -2 });
+    }
+  });
 
   let dataPath = null;
   
