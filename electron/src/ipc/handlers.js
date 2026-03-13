@@ -1633,8 +1633,28 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
       }
       if (payload.hasOwnProperty('formerNames')) {
         const arr = Array.isArray(payload.formerNames) ? payload.formerNames : [];
-        const list = arr.map(n => (typeof n === 'string' ? n.trim() : '')).filter(Boolean);
-        updates.former_names = list.length ? JSON.stringify(list) : null;
+        const list = arr
+          .map(n => (typeof n === 'string' ? n.trim() : ''))
+          .filter(Boolean);
+        const uniq = Array.from(new Set(list));
+
+        // 计算当前应视为显示名称和基础名称（用于剔除同名曾用名）
+        const baseName = actor.name && String(actor.name).trim();
+        const displayTrim = (() => {
+          if (updates.display_name !== undefined) {
+            return updates.display_name && String(updates.display_name).trim();
+          }
+          return actor.display_name && String(actor.display_name).trim();
+        })();
+
+        const cleaned = uniq.filter(n => {
+          if (!n) return false;
+          if (displayTrim && n === displayTrim) return false;
+          if (baseName && n === baseName) return false;
+          return true;
+        });
+
+        updates.former_names = cleaned.length ? JSON.stringify(cleaned) : null;
       }
       if (Object.keys(updates).length === 0) return { success: true };
       await actor.update(updates);
@@ -1713,10 +1733,14 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           if (n && typeof n === 'string' && n.trim()) mergedFormerSet.add(n.trim());
         });
 
-        // 不在曾用名中重复保留与当前 display_name 完全相同的名称
+        // 不在曾用名中重复保留与当前 display_name 或 name 完全相同的名称
         const targetDisplayTrim = target.display_name && String(target.display_name).trim();
+        const targetNameTrim = target.name && String(target.name).trim();
         if (targetDisplayTrim) {
           mergedFormerSet.delete(targetDisplayTrim);
+        }
+        if (targetNameTrim) {
+          mergedFormerSet.delete(targetNameTrim);
         }
 
         const mergedFormer = Array.from(mergedFormerSet);

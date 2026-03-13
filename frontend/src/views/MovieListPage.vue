@@ -379,7 +379,17 @@ async function saveActorProfile() {
   const id = actorProfile.value?.id;
   if (id == null || isNaN(Number(id))) return;
   const displayName = typeof editDisplayName.value === 'string' ? editDisplayName.value.trim() : '';
-  const formerNames = editFormerNames.value.map(n => (typeof n === 'string' ? n.trim() : '')).filter(Boolean);
+  // 去重并清洗曾用名
+  const formerNamesArr = editFormerNames.value
+    .map(n => (typeof n === 'string' ? n.trim() : ''))
+    .filter(Boolean);
+  const formerNames = Array.from(new Set(formerNamesArr));
+
+  // 显示名不能与曾用名重复
+  if (displayName && formerNames.includes(displayName)) {
+    ElMessage.error('显示名称不能与曾用名重复，请修改后再保存');
+    return;
+  }
   try {
     console.debug('[ActorProfile] saveActorProfile start', {
       id,
