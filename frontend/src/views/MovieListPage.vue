@@ -256,6 +256,9 @@ const loading = ref(true);
 const movies = ref([]);
 const total = ref(0);
 const imageCache = ref({});
+/** 初始加载是否已结束（成功或非 DB_NOT_READY 的失败）；未结束时 database:ready / 轮询会再次触发加载 */
+const initialLoadDone = ref(false);
+const loadInProgress = ref(false);
 const mainContentRef = ref(null);
 const listType = computed(() => {
   const path = route.path;
@@ -483,12 +486,27 @@ async function openAvatarPreview() {
     const res = await window.electronAPI?.actorAvatars?.getCandidatesByName?.(name);
     const list = (res?.success && Array.isArray(res.data?.candidates)) ? res.data.candidates : [];
     const urls = list.map(c => c.url).filter(Boolean);
-    if (!urls.length && actorAvatar.value?.url) {
-      avatarPreviewUrls.value = [actorAvatar.value.url];
-    } else {
+    const currentUrl = actorAvatar.value?.url;
+    if (!urls.length && currentUrl) {
+      avatarPreviewUrls.value = [currentUrl];
+      avatarPreviewIndex.value = 0;
+    } else if (urls.length) {
       avatarPreviewUrls.value = urls;
+      // 从当前展示的头像开始：优先用 selectedId 定位，否则用 URL 匹配
+      const selectedId = res?.data?.selectedId;
+      let idx = 0;
+      if (selectedId != null) {
+        const i = list.findIndex(c => c.id === selectedId);
+        if (i >= 0) idx = i;
+      } else if (currentUrl) {
+        const i = urls.indexOf(currentUrl);
+        if (i >= 0) idx = i;
+      }
+      avatarPreviewIndex.value = idx;
+    } else {
+      avatarPreviewUrls.value = [];
+      avatarPreviewIndex.value = 0;
     }
-    avatarPreviewIndex.value = 0;
     if (avatarPreviewUrls.value.length) {
       avatarPreviewVisible.value = true;
     }
@@ -654,6 +672,7 @@ const loadDataRaw = async () => {
         if (id == null || (viewModeFromQuery.value === 'actor' && isNaN(id))) {
           ElMessage.error('无效的演员ID');
           loading.value = false;
+          initialLoadDone.value = true;
           return;
         }
         result = await window.electronAPI.actors.getMovies(id, { page, pageSize, sortBy, viewMode: viewModeFromQuery.value, filterGenres, filterYears });
@@ -776,6 +795,7 @@ const loadDataRaw = async () => {
     console.error('loadData error:', err);
     ElMessage.error('加载失败: ' + (err.message || '未知错误'));
     loading.value = false;
+    initialLoadDone.value = true;
     return;
   }
 
@@ -787,8 +807,10 @@ const loadDataRaw = async () => {
   if (!result.success) {
     ElMessage.error('加载失败: ' + (result.message || '未知错误'));
     loading.value = false;
+    initialLoadDone.value = true;
     return;
   }
+  initialLoadDone.value = true;
 
   const totalCount = result.total ?? 0;
   const pageMax = pageSize > 0 ? Math.max(1, Math.ceil(totalCount / pageSize)) : 1;
@@ -944,32 +966,35 @@ onMounted(() => {
       savePageState(pageKey.value, { currentPage: p });
     }
   }
-  let loadCalled = false;
-  const doLoad = () => {
-    if (loadCalled) return;
-    loadCalled = true;
-    loadData();
+  const doLoad = async () => {
+    if (initialLoadDone.value || loadInProgress.value) return;
+    loadInProgress.value = true;
+    try {
+      await loadData();
+    } finally {
+      loadInProgress.value = false;
+    }
   };
   const tryLoad = async () => {
     try {
       const res = await window.electronAPI?.system?.isDatabaseReady?.();
-      if (res?.ready) { doLoad(); return; }
+      if (res?.ready) { await doLoad(); return; }
     } catch (e) {}
     const start = Date.now();
     const t = setInterval(async () => {
-      if (loadCalled || Date.now() - start >= 15000) {
+      if (initialLoadDone.value || Date.now() - start >= 15000) {
         clearInterval(t);
-        if (!loadCalled) doLoad();
+        if (!initialLoadDone.value) await doLoad();
         return;
       }
       try {
         const res = await window.electronAPI?.system?.isDatabaseReady?.();
-        if (res?.ready) { clearInterval(t); doLoad(); }
+        if (res?.ready) { clearInterval(t); await doLoad(); }
       } catch (e) {}
     }, 400);
   };
   if (window.electronAPI?.system?.onDatabaseReady) {
-    window.electronAPI.system.onDatabaseReady(() => { if (!loadCalled) doLoad(); });
+    window.electronAPI.system.onDatabaseReady(() => { if (!initialLoadDone.value && !loadInProgress.value) doLoad(); });
   }
   tryLoad();
   restoreScrollPosition(pageKey.value, 200);
