@@ -17,6 +17,9 @@
         <el-menu-item index="/genres">
           <span>分类</span>
         </el-menu-item>
+        <el-menu-item index="/actor-catalog">
+          <span>演员</span>
+        </el-menu-item>
         <el-menu-item index="/search">
           <span>搜索</span>
         </el-menu-item>
@@ -34,7 +37,7 @@
     <div class="router-view-container">
       <router-view v-slot="{ Component, route: r }">
         <keep-alive :max="10" :include="cachedViewNames">
-          <component :is="Component" :key="r.fullPath" />
+          <component :is="Component" :key="cacheKey(r)" />
         </keep-alive>
       </router-view>
     </div>
@@ -50,6 +53,14 @@ import { useScanStore } from './stores/scanStore';
 const route = useRoute();
 const scanStore = useScanStore();
 const activeMenu = computed(() => route.path);
+
+// 演员页与目录页共用 ActorCatalog，用 name 区分缓存，避免复用错实例导致显示目录数据
+function cacheKey(r) {
+  if (r.name === 'ActorCatalogOnly' || r.name === 'DirectoryCatalog') {
+    return r.name;
+  }
+  return r.fullPath;
+}
 
 const cachedViewNames = ['MovieListPage', 'Search', 'FavoritesPage', 'ActorCatalog', 'GenreCatalog', 'StudioCatalog', 'DirectorCatalog'];
 

@@ -5,7 +5,15 @@
         <div class="header-content">
           <h1 class="header-title">{{ getCurrentCatalogTitle() }}</h1>
           <div class="header-right">
-            <template v-if="catalogType.type === 'actor' && catalogType.mode === 'actor'">
+            <template v-if="isActorOnly">
+              <el-button
+                type="default"
+                :icon="Refresh"
+                circle
+                class="grid-zoom-btn"
+                title="刷新"
+                @click="handleRefresh"
+              />
               <el-button
                 type="default"
                 :icon="ZoomOut"
@@ -34,12 +42,12 @@
               </el-select>
             </template>
             <el-select
+              v-else
               v-model="currentCatalog"
               style="width: 180px;"
               @change="handleCatalogChange"
               class="catalog-selector"
             >
-              <el-option label="演员" value="actor-actor" />
               <el-option label="文件目录" value="actor-folder" />
               <el-option label="导演" value="director" />
               <el-option label="制作商" value="studio" />
@@ -65,7 +73,7 @@
               >
                 <div class="actor-card-inner">
                   <div class="actor-info">
-                    <template v-if="catalogType.type === 'actor' && catalogType.mode === 'actor' && item.avatar?.hasAvatar">
+                    <template v-if="showActorMode && item.avatar?.hasAvatar">
                       <div class="actor-avatar-wrap">
                         <el-image
                           :src="item.avatar.url"
@@ -90,7 +98,7 @@
                     </div>
                   </div>
                   <el-icon
-                    v-if="catalogType.type === 'actor' && catalogType.mode === 'actor' && item.avatar?.hasMultiple"
+                    v-if="showActorMode && item.avatar?.hasMultiple"
                     class="actor-card-edit-icon"
                     @click.stop="openAvatarPicker(item.name)"
                   >
@@ -115,7 +123,7 @@ defineOptions({ name: 'ActorCatalog' });
 import { ref, onMounted, onActivated, onBeforeUnmount, computed, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { Edit, ZoomIn, ZoomOut } from '@element-plus/icons-vue';
+import { Edit, ZoomIn, ZoomOut, Refresh } from '@element-plus/icons-vue';
 import { useScanStore } from '../stores/scanStore';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 import ActorAvatarPickerDialog from '../components/ActorAvatarPickerDialog.vue';
@@ -168,10 +176,14 @@ function gridZoomOut() {
   } catch (_) {}
 }
 
-// 从 localStorage 恢复当前目录类型
+// 演员目录独立页（仅导航栏入口）；目录页不再包含演员选项
+const isActorOnly = computed(() => route.path === '/actor-catalog' || route.meta.actorOnly === true);
+
+// 从 localStorage 恢复当前目录类型（目录页用；若曾选演员则改为文件目录）
 const getInitialCatalog = () => {
   try {
     const stored = localStorage.getItem('javlibrary_catalog_type');
+    if (stored === 'actor-actor') return 'actor-folder';
     return stored || 'actor-folder';
   } catch (error) {
     console.error('获取目录类型失败:', error);
@@ -181,17 +193,24 @@ const getInitialCatalog = () => {
 
 const currentCatalog = ref(getInitialCatalog());
 
-// 解析当前目录类型
+// 解析当前目录类型；演员独立页固定为 actor-actor
 const catalogType = computed(() => {
+  if (isActorOnly.value) return { type: 'actor', mode: 'actor' };
   const parts = currentCatalog.value.split('-');
   return {
-    type: parts[0], // 'actor', 'director', 'studio', 'genre'
-    mode: parts[1] || null // 'folder', 'actor' (仅用于演员)
+    type: parts[0],
+    mode: parts[1] || null
   };
 });
 
+// 是否按演员模式展示（头像、曾用名等）
+const showActorMode = computed(() =>
+  isActorOnly.value || (catalogType.value.type === 'actor' && catalogType.value.mode === 'actor')
+);
+
 // 获取当前目录标题
 const getCurrentCatalogTitle = () => {
+  if (isActorOnly.value) return '演员目录';
   const { type, mode } = catalogType.value;
   if (type === 'actor') {
     return mode === 'folder' ? '文件目录' : '演员目录';
@@ -206,6 +225,7 @@ const getCurrentCatalogTitle = () => {
 };
 
 const getEmptyDescription = () => {
+  if (isActorOnly.value) return '暂无女优数据，请先扫描数据文件夹';
   const { type, mode } = catalogType.value;
   if (type === 'actor') {
     return mode === 'folder' ? '暂无文件目录数据，请先扫描数据文件夹' : '暂无女优数据，请先扫描数据文件夹';
@@ -226,7 +246,7 @@ const loadCatalog = async () => {
     let result;
 
     if (type === 'actor') {
-      result = await window.electronAPI.actors.getList({ viewMode: mode });
+      result = await window.electronAPI.actors.getList({ viewMode: mode || 'actor' });
     } else if (type === 'director') {
       result = await window.electronAPI.directors.getList();
     } else if (type === 'studio') {
@@ -253,7 +273,6 @@ const loadCatalog = async () => {
 };
 
 const handleCatalogChange = () => {
-  // 保存当前目录类型到 localStorage
   try {
     localStorage.setItem('javlibrary_catalog_type', currentCatalog.value);
   } catch (error) {
@@ -261,6 +280,10 @@ const handleCatalogChange = () => {
   }
   loadCatalog();
 };
+
+function handleRefresh() {
+  loadCatalog();
+}
 
 function openAvatarPicker(name) {
   avatarPickerActorName.value = name || '';
@@ -374,6 +397,11 @@ const loadFilterPlayable = async () => {
 };
 
 onActivated(() => {
+  if (isActorOnly.value) {
+    // 演员页仅导航栏入口，每次进入都重新拉取，避免与目录页共用缓存实例时显示错数据
+    loadCatalog();
+    return;
+  }
   if (scanStore.dataVersion > lastRefreshedDataVersion.value) {
     lastRefreshedDataVersion.value = scanStore.dataVersion;
     loadCatalog();
@@ -390,6 +418,7 @@ watch(
 );
 
 function onActorProfileChanged() {
+  if (isActorOnly.value) return;
   const { type } = catalogType.value;
   if (type === 'actor') {
     loadCatalog();
@@ -401,40 +430,32 @@ onMounted(() => {
   loadCatalog();
 
   window.addEventListener('actorAvatarChanged', () => {
+    if (isActorOnly.value) return;
     const { type, mode } = catalogType.value;
     if (type === 'actor' && mode === 'actor') {
       loadCatalog();
     }
   });
 
-  if (window.electronAPI?.system?.onFileChange) {
-    window.electronAPI.system.onFileChange((data) => {
-      console.log('文件变化:', data);
-      // 重新加载列表
-      loadCatalog();
-    });
+  if (!isActorOnly.value) {
+    if (window.electronAPI?.system?.onFileChange) {
+      window.electronAPI.system.onFileChange(() => {
+        loadCatalog();
+      });
+    }
+    if (window.electronAPI?.system?.onDatabaseReady) {
+      window.electronAPI.system.onDatabaseReady(() => {
+        loadCatalog();
+      });
+    }
+    if (window.electronAPI?.system?.onScanCompleted) {
+      window.electronAPI.system.onScanCompleted(() => {
+        loadCatalog();
+      });
+    }
   }
-  
-  // 监听数据库就绪事件
-  if (window.electronAPI?.system?.onDatabaseReady) {
-    window.electronAPI.system.onDatabaseReady(() => {
-      console.log('数据库已就绪，重新加载数据');
-      loadCatalog();
-    });
-  }
-  
-  // 监听扫描完成事件
-  if (window.electronAPI?.system?.onScanCompleted) {
-    window.electronAPI.system.onScanCompleted((result) => {
-      console.log('扫描完成:', result);
-      // 重新加载列表
-      loadCatalog();
-    });
-  }
-  
-  // 监听过滤设置变化事件
+
   window.addEventListener('filterPlayableChanged', () => {
-    console.log('过滤设置已更改，重新加载过滤设置');
     loadFilterPlayable();
   });
 
