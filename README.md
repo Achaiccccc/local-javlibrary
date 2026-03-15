@@ -29,26 +29,29 @@
 
 ## 界面预览
 
-![首页](images/javlibrary-01.png)
+![首页](images/01-主题切换.png)
 *首页（日间/夜间模式）*
 
-![视图切换](images/javlibrary-02.png)
+![视图切换](images/02-视图切换.png)
 *视图切换（文字/图文/缩图模式）*
 
-![详情页](images/javlibrary-03.png)
-*详情页（夜间/日间模式）*
+![详情页](images/03-详情页.png)
+*详情页*
 
-![收藏夹](images/javlibrary-04.png)
+![收藏夹](images/04-演员页.png)
+*演员一览*
+
+![收藏夹](images/07-收藏夹.png)
 *收藏夹*
 
-![影片搜索](images/javlibrary-05.png)
+![影片搜索](images/05-影片搜索.png)
 *简易搜索/多重搜索*
 
-![应用设置](images/javlibrary-06.png)
+![应用设置](images/09-设置页.png)
 *应用设置*
 
-![随机抽奖](images/javlibrary-07.png)
-*随机抽奖*
+![随机功能](images/08-随机功能.png)
+*随机功能*
 
 ## 技术栈
 
