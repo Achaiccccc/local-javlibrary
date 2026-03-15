@@ -17,6 +17,9 @@
         <el-menu-item index="/genres">
           <span>分类</span>
         </el-menu-item>
+        <el-menu-item index="/actor-catalog">
+          <span>演员</span>
+        </el-menu-item>
         <el-menu-item index="/search">
           <span>搜索</span>
         </el-menu-item>
@@ -33,8 +36,8 @@
     </div>
     <div class="router-view-container">
       <router-view v-slot="{ Component, route: r }">
-        <keep-alive :max="10" :include="cachedViewNames">
-          <component :is="Component" :key="r.fullPath" />
+        <keep-alive :max="5" :include="cachedViewNames">
+          <component :is="Component" :key="cacheKey(r)" />
         </keep-alive>
       </router-view>
     </div>
@@ -50,6 +53,14 @@ import { useScanStore } from './stores/scanStore';
 const route = useRoute();
 const scanStore = useScanStore();
 const activeMenu = computed(() => route.path);
+
+// 演员页与目录页共用 ActorCatalog，用 name 区分缓存，避免复用错实例导致显示目录数据
+function cacheKey(r) {
+  if (r.name === 'ActorCatalogOnly' || r.name === 'DirectoryCatalog') {
+    return r.name;
+  }
+  return r.fullPath;
+}
 
 const cachedViewNames = ['MovieListPage', 'Search', 'FavoritesPage', 'ActorCatalog', 'GenreCatalog', 'StudioCatalog', 'DirectorCatalog'];
 
@@ -77,11 +88,15 @@ const handleScroll = () => {
   lastScrollTop = currentScrollTop <= 0 ? 0 : currentScrollTop;
 };
 
-// 监听路由变化，在切换页面时暂停后台加载
+// 监听路由变化，在切换页面时暂停后台加载，并兜底解除全局滚动锁定
 watch(() => route.path, (newPath, oldPath) => {
   if (oldPath && newPath !== oldPath) {
-    // 路由切换时暂停后台加载
     pauseBackgroundLoading();
+    // 兜底：移除 body 上可能残留的滚动锁定
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.style.overflow = '';
+      document.body.classList.remove('el-overlay-parent--hidden');
+    }
     // 延迟恢复，让新页面有时间加载数据
     setTimeout(() => {
       resumeBackgroundLoading();

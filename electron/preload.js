@@ -20,7 +20,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   actors: {
     getList: (params) => ipcRenderer.invoke('actors:getList', params),
     getById: (id, params) => ipcRenderer.invoke('actors:getById', id, params),
-    getMovies: (id, params) => ipcRenderer.invoke('actors:getMovies', id, params)
+    getMovies: (id, params) => ipcRenderer.invoke('actors:getMovies', id, params),
+    updateProfile: (actorId, payload) => ipcRenderer.invoke('actors:updateProfile', actorId, payload),
+    checkProfileConflict: (actorId, payload) => ipcRenderer.invoke('actors:checkProfileConflict', actorId, payload),
+    merge: (targetId, sourceId) => ipcRenderer.invoke('actors:merge', targetId, sourceId)
   },
   
   // 分类相关
@@ -65,6 +68,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 系统相关
   system: {
     scan: () => ipcRenderer.invoke('system:scan'),
+    scanActors: () => ipcRenderer.invoke('system:scanActors'),
     runStartupSync: () => ipcRenderer.invoke('system:runStartupSync'),
     getScanStatus: () => ipcRenderer.invoke('system:getScanStatus'),
     getStats: () => ipcRenderer.invoke('system:getStats'),
@@ -94,7 +98,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getFilterPlayable: () => ipcRenderer.invoke('settings:getFilterPlayable'),
     setFilterPlayable: (value) => ipcRenderer.invoke('settings:setFilterPlayable', value),
     getAutoScanOnStartup: () => ipcRenderer.invoke('settings:getAutoScanOnStartup'),
-    setAutoScanOnStartup: (value) => ipcRenderer.invoke('settings:setAutoScanOnStartup', value)
+    setAutoScanOnStartup: (value) => ipcRenderer.invoke('settings:setAutoScanOnStartup', value),
+    getActorDataPath: () => ipcRenderer.invoke('settings:getActorDataPath'),
+    setActorDataPath: () => ipcRenderer.invoke('settings:setActorDataPath'),
+    clearActorDataPath: () => ipcRenderer.invoke('settings:clearActorDataPath')
   },
   
   // 播放相关
@@ -111,5 +118,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getFoldersContainingMovie: (movieCode) => ipcRenderer.invoke('favorites:getFoldersContainingMovie', movieCode),
     setMovieFolders: (movieCode, folderIds) => ipcRenderer.invoke('favorites:setMovieFolders', movieCode, folderIds),
     getMoviesByFolder: (folderId, options) => ipcRenderer.invoke('favorites:getMoviesByFolder', folderId, options)
+  },
+
+  // 分类配置（按大类 + 小类保存在 AppData）
+  genreCategories: {
+    get: () => ipcRenderer.invoke('genreCategories:get'),
+    save: (categories) => ipcRenderer.invoke('genreCategories:save', categories)
+  },
+
+  // 演员头像（来自演员数据路径 Filetree.json + Content，支持简繁体匹配）
+  actorAvatars: {
+    getSummaryByName: (actorName) => ipcRenderer.invoke('actorAvatars:getSummaryByName', actorName),
+    getCandidatesByName: (actorName) => ipcRenderer.invoke('actorAvatars:getCandidatesByName', actorName),
+    setSelectionByName: (actorName, selectedId) => ipcRenderer.invoke('actorAvatars:setSelectionByName', actorName, selectedId)
   }
 });

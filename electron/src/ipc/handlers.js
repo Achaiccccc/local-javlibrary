@@ -8,8 +8,11 @@ const { getExtraFanartRelativePaths } = require('../utils/fileUtils');
 const path = require('path');
 const fs = require('fs-extra');
 const Store = require('electron-store');
+const { getStoreName } = require('../config/storeName');
 const scanState = require('../state/scanState');
 const favoritesService = require('../services/favoritesService');
+const genreCategoriesService = require('../services/genreCategoriesService');
+const actorAvatarService = require('../services/actorAvatarService');
 
 // 存储主窗口引用，用于动态获取
 let mainWindowRef = null;
@@ -21,11 +24,8 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   // 保存主窗口引用
   mainWindowRef = mainWindow;
   
-  // 创建设置存储实例
-  // 在开发环境中使用不同的配置名称，避免与生产环境共享数据
-  const settingsStore = store || new Store({
-    name: process.env.NODE_ENV === 'development' ? 'javlibrary-dev' : 'javlibrary'
-  });
+  // 创建设置存储实例（开发/正式/测试环境通过 getStoreName 区分）
+  const settingsStore = store || new Store({ name: getStoreName() });
 
   /** 根据 sortBy 参数返回 Sequelize order 数组（支持 premiered/title/folder_updated_at 正序/倒序） */
   function getOrderFromSortBy(sortBy) {
@@ -157,6 +157,122 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
     return { success: true };
   });
 
+  ipcMain.handle('settings:getActorDataPath', () => {
+    return settingsStore.get('actorDataPath', null);
+  });
+
+  ipcMain.handle('settings:clearActorDataPath', () => {
+    settingsStore.delete('actorDataPath');
+    return { success: true };
+  });
+
+  ipcMain.handle('settings:setActorDataPath', async () => {
+    try {
+      const win = mainWindowRef || BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+      if (!win) return { success: false, message: '无法打开对话框：窗口未创建' };
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openDirectory'],
+        title: '请选择演员数据文件夹（需包含 Filetree.json 与 Content 目录）'
+      });
+      if (result.canceled || !result.filePaths.length) return { success: false, message: '已取消' };
+      const rootPath = result.filePaths[0];
+      const filetreePath = path.join(rootPath, 'Filetree.json');
+      const contentDir = path.join(rootPath, 'Content');
+      if (!(await fs.pathExists(filetreePath))) {
+        return { success: false, message: '该路径下未找到 Filetree.json' };
+      }
+      if (!(await fs.pathExists(contentDir))) {
+        return { success: false, message: '该路径下未找到 Content 目录' };
+      }
+      settingsStore.set('actorDataPath', rootPath);
+      return { success: true, path: rootPath };
+    } catch (e) {
+      return { success: false, message: e.message || String(e) };
+    }
+  });
+
+  /** 与「扫描演员信息」相同的逻辑，用于编辑/合并后自动刷新头像映射；后台执行不阻塞 IPC 返回 */
+  function runActorAvatarScanInBackground() {
+    const actorDataPath = settingsStore.get('actorDataPath', null);
+    if (!actorDataPath) return;
+    const getActorsWithAliases = async () => {
+      const sequelize = getSequelize();
+      if (!sequelize?.models?.ActorFromNfo) return [];
+      const rows = await sequelize.models.ActorFromNfo.findAll({
+        attributes: ['name', 'display_name', 'former_names']
+      });
+      return rows.map(r => ({
+        name: r.name,
+        display_name: r.display_name || null,
+        former_names: r.former_names
+      }));
+    };
+    actorAvatarService.scanFromActorDataPath(actorDataPath, getActorsWithAliases)
+      .then(() => { console.log('演员信息更新/合并后，头像映射已自动刷新'); })
+      .catch(e => { console.warn('演员信息更新/合并后自动刷新头像映射失败:', e?.message || e); });
+  }
+
+  ipcMain.handle('system:scanActors', async () => {
+    try {
+      const actorDataPath = settingsStore.get('actorDataPath', null);
+      if (!actorDataPath) return { success: false, message: '请先在设置中配置演员数据路径' };
+      const getActorsWithAliases = async () => {
+        const sequelize = getSequelize();
+        if (!sequelize?.models?.ActorFromNfo) return [];
+        const rows = await sequelize.models.ActorFromNfo.findAll({
+          attributes: ['name', 'display_name', 'former_names']
+        });
+        return rows.map(r => ({
+          name: r.name,
+          display_name: r.display_name || null,
+          former_names: r.former_names
+        }));
+      };
+      const result = await actorAvatarService.scanFromActorDataPath(actorDataPath, getActorsWithAliases);
+      return result;
+    } catch (e) {
+      return { success: false, message: e.message || String(e) };
+    }
+  });
+
+  ipcMain.handle('actorAvatars:getSummaryByName', async (event, actorName) => {
+    try {
+      const actorDataPath = settingsStore.get('actorDataPath', null);
+      const summary = await actorAvatarService.getActorAvatarSummaryAsync(actorName, actorDataPath);
+      return { success: true, data: summary };
+    } catch (e) {
+      return { success: false, message: e.message || String(e), data: null };
+    }
+  });
+
+  ipcMain.handle('actorAvatars:getCandidatesByName', (event, actorName) => {
+    try {
+      const actorDataPath = settingsStore.get('actorDataPath', null);
+      const data = actorAvatarService.getActorAvatarCandidates(actorName, actorDataPath);
+      return { success: true, data };
+    } catch (e) {
+      return { success: false, message: e.message || String(e), data: { candidates: [], selectedId: null } };
+    }
+  });
+
+  ipcMain.handle('actorAvatars:setSelectionByName', (event, actorName, selectedId) => {
+    try {
+      const ok = actorAvatarService.setActorAvatarSelection(actorName, selectedId);
+      return { success: ok };
+    } catch (e) {
+      return { success: false, message: e.message || String(e) };
+    }
+  });
+
+  function getActorDataPath() {
+    return settingsStore.get('actorDataPath', null);
+  }
+
+  function attachAvatarToActor(actorName) {
+    const actorDataPath = getActorDataPath();
+    return actorAvatarService.getActorAvatarSummary(actorName, actorDataPath);
+  }
+
   ipcMain.handle('system:getScanStatus', () => {
     return { inProgress: scanState.getScanInProgress(), type: scanState.getCurrentScanType() };
   });
@@ -233,6 +349,26 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
   // 收藏夹 IPC（按识别码 code 存储，扫描时不清空）
   ipcMain.handle('favorites:getFolders', () => {
     return { success: true, data: favoritesService.getFolders() };
+  });
+
+  // 分类配置 IPC（按大类 + 小类保存到 AppData）
+  ipcMain.handle('genreCategories:get', () => {
+    try {
+      const categories = genreCategoriesService.getCategories();
+      return { success: true, data: categories };
+    } catch (error) {
+      console.error('获取分类配置失败:', error);
+      return { success: false, message: error.message, data: [] };
+    }
+  });
+  ipcMain.handle('genreCategories:save', (event, categories) => {
+    try {
+      genreCategoriesService.saveCategories(categories || []);
+      return { success: true };
+    } catch (error) {
+      console.error('保存分类配置失败:', error);
+      return { success: false, message: error.message };
+    }
   });
   ipcMain.handle('favorites:createFolder', (event, name) => {
     const id = favoritesService.createFolder(name);
@@ -579,7 +715,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         { 
           model: ActorFromNfo, 
           through: { attributes: [] }, 
-          attributes: ['id', 'name'],
+          attributes: ['id', 'name', 'display_name', 'former_names'],
           as: 'ActorsFromNfo'
         },
         { model: sequelize.models.Genre, through: { attributes: [] }, attributes: ['id', 'name'] },
@@ -615,9 +751,19 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         updated_at: movie.updated_at
       };
       
-      // 处理关联数据 - 所有演员数据均来自NFO，都在数据库中
+      // 处理关联数据 - 所有演员数据均来自NFO，都在数据库中；附带演员头像摘要（若已配置演员数据路径）
       const dbActors = movie.ActorsFromNfo && Array.isArray(movie.ActorsFromNfo) 
-        ? movie.ActorsFromNfo.map(actor => ({ id: actor.id, name: actor.name, inDatabase: true }))
+        ? movie.ActorsFromNfo.map(actor => {
+            const base = {
+              id: actor.id,
+              name: actor.name,
+              display_name: actor.display_name || null,
+              former_names: parseFormerNames(actor.former_names),
+              inDatabase: true
+            };
+            base.avatar = attachAvatarToActor(actor.name);
+            return base;
+          })
         : [];
       
       movieData.actors = dbActors;
@@ -1291,16 +1437,18 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           const movies = actor.Movies || [];
           const totalCount = movies.length;
           const playableCount = movies.filter(m => m.playable === true || m.playable === 1).length;
-          
-          return {
+          const item = {
             id: actor.id,
-            name: actor.name,
+            name: actor.name,                      // 原始 NFO 名称，作为唯一键与头像匹配
+            display_name: actor.display_name || null, // 显示名称，目录页展示时优先使用
             totalCount,
             playableCount,
             viewMode: 'actor',
             created_at: actor.created_at,
             updated_at: actor.updated_at
           };
+          item.avatar = attachAvatarToActor(actor.name);
+          return item;
         });
         
         console.log(`actors:getList 女优目录模式查询到 ${actorsData.length} 条记录`);
@@ -1354,15 +1502,282 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         actorData = {
           id: actor.id,
           name: actor.name,
+          display_name: actor.display_name || null,
+          former_names: parseFormerNames(actor.former_names),
           viewMode: 'actor',
           created_at: actor.created_at,
           updated_at: actor.updated_at
         };
+        actorData.avatar = attachAvatarToActor(actor.name);
       }
       
       return { success: true, data: actorData };
     } catch (error) {
       return { success: false, message: error.message };
+    }
+  });
+
+  function parseFormerNames(raw) {
+    if (raw == null || raw === '') return [];
+    if (typeof raw !== 'string') return Array.isArray(raw) ? raw : [];
+    try {
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.filter(n => typeof n === 'string' && n.trim()) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // 检查演员显示名/曾用名是否与其他演员产生冲突，仅返回第一个冲突目标
+  ipcMain.handle('actors:checkProfileConflict', async (event, actorId, payload = {}) => {
+    try {
+      console.log('[IPC] actors:checkProfileConflict called', { actorId, payload });
+      const sequelize = getSequelize();
+      if (!sequelize || !sequelize.models?.ActorFromNfo) {
+        console.warn('[IPC] actors:checkProfileConflict - DB not ready');
+        return { success: false, message: '数据库未初始化' };
+      }
+      const id = parseInt(actorId, 10);
+      if (isNaN(id)) {
+        console.warn('[IPC] actors:checkProfileConflict - invalid actorId', actorId);
+        return { success: false, message: '无效的演员ID' };
+      }
+      const ActorFromNfo = sequelize.models.ActorFromNfo;
+      const actor = await ActorFromNfo.findByPk(id);
+      if (!actor) {
+        console.warn('[IPC] actors:checkProfileConflict - actor not found', id);
+        return { success: false, message: '演员不存在' };
+      }
+
+      const newDisplayName = (typeof payload.displayName === 'string' ? payload.displayName.trim() : '') || null;
+      const newFormerNamesArr = Array.isArray(payload.formerNames)
+        ? payload.formerNames.map(n => (typeof n === 'string' ? n.trim() : '')).filter(Boolean)
+        : [];
+
+      if (!newDisplayName && newFormerNamesArr.length === 0) {
+        console.log('[IPC] actors:checkProfileConflict - nothing to check');
+        return { success: true, hasConflict: false };
+      }
+
+      const namesToCheck = new Set();
+      if (newDisplayName) namesToCheck.add(newDisplayName);
+      newFormerNamesArr.forEach(n => namesToCheck.add(n));
+
+      const allActors = await ActorFromNfo.findAll({
+        where: { id: { [Op.ne]: id } }
+      });
+      console.log('[IPC] actors:checkProfileConflict - total other actors:', allActors.length);
+
+      // 计算当前演员的 canonicalId（若已被合并，则等于 merged_to_id；否则等于自身 id）
+      const selfCanonicalId = actor.merged_to_id || actor.id;
+
+      for (const other of allActors) {
+        // 若对方记录已被软合并且 canonical 与当前演员一致，则视为同一人，不再提示重复合并
+        const otherCanonicalId = other.merged_to_id || other.id;
+        if (otherCanonicalId === selfCanonicalId) {
+          continue;
+        }
+
+        const otherDisplay = (other.display_name && String(other.display_name).trim()) || null;
+        const otherFormer = parseFormerNames(other.former_names);
+        const candidateNames = new Set();
+        if (other.name && String(other.name).trim()) candidateNames.add(String(other.name).trim());
+        if (otherDisplay) candidateNames.add(otherDisplay);
+        otherFormer.forEach(n => candidateNames.add(n));
+
+        for (const n of namesToCheck) {
+          if (candidateNames.has(n)) {
+            console.log('[IPC] actors:checkProfileConflict - found conflict', {
+              conflictActorId: other.id,
+              name: n
+            });
+            return {
+              success: true,
+              hasConflict: true,
+              conflict: {
+                actorId: other.id,
+                name: n,
+                actorDisplayName: otherDisplay || other.name || '',
+                actorFormerNames: otherFormer
+              }
+            };
+          }
+        }
+      }
+
+      console.log('[IPC] actors:checkProfileConflict - no conflict');
+      return { success: true, hasConflict: false };
+    } catch (e) {
+      console.error('[IPC] actors:checkProfileConflict error', e);
+      return { success: false, message: e?.message || String(e) };
+    }
+  });
+
+  // 更新演员显示名与曾用名（不修改 name，不处理合并）
+  ipcMain.handle('actors:updateProfile', async (event, actorId, payload = {}) => {
+    try {
+      const sequelize = getSequelize();
+      if (!sequelize || !sequelize.models?.ActorFromNfo) {
+        return { success: false, message: '数据库未初始化' };
+      }
+      const id = parseInt(actorId, 10);
+      if (isNaN(id)) return { success: false, message: '无效的演员ID' };
+      const ActorFromNfo = sequelize.models.ActorFromNfo;
+      const actor = await ActorFromNfo.findByPk(id);
+      if (!actor) return { success: false, message: '演员不存在' };
+      const updates = {};
+      if (payload.hasOwnProperty('displayName')) {
+        updates.display_name = payload.displayName === '' || payload.displayName == null ? null : String(payload.displayName).trim();
+      }
+      if (payload.hasOwnProperty('formerNames')) {
+        const arr = Array.isArray(payload.formerNames) ? payload.formerNames : [];
+        const list = arr
+          .map(n => (typeof n === 'string' ? n.trim() : ''))
+          .filter(Boolean);
+        const uniq = Array.from(new Set(list));
+
+        // 仅剔除与「显示名」重复的曾用名，避免同一名称在显示名与曾用名中重复展示。
+        // 不剔除与原始名称（name）相同的项：用户可能将 NFO 原始名加入曾用名以参与头像匹配等，且 name 不可编辑，允许保留。
+        const displayTrim = (() => {
+          if (updates.display_name !== undefined) {
+            return updates.display_name && String(updates.display_name).trim();
+          }
+          return actor.display_name && String(actor.display_name).trim();
+        })();
+
+        const cleaned = uniq.filter(n => {
+          if (!n) return false;
+          if (displayTrim && n === displayTrim) return false;
+          return true;
+        });
+
+        updates.former_names = cleaned.length ? JSON.stringify(cleaned) : null;
+      }
+      if (Object.keys(updates).length === 0) return { success: true };
+      await actor.update(updates);
+      runActorAvatarScanInBackground();
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e?.message || String(e) };
+    }
+  });
+
+  // 软合并演员：保留 targetId，迁移 sourceId 的影片关联和别名信息，然后将 sourceId 标记为合并到 targetId
+  ipcMain.handle('actors:merge', async (event, targetId, sourceId) => {
+    try {
+      const sequelize = getSequelize();
+      if (!sequelize || !sequelize.models?.ActorFromNfo || !sequelize.models?.MovieActorFromNfo) {
+        return { success: false, message: '数据库未初始化' };
+      }
+      const ActorFromNfo = sequelize.models.ActorFromNfo;
+      const MovieActorFromNfo = sequelize.models.MovieActorFromNfo;
+
+      const tId = parseInt(targetId, 10);
+      const sId = parseInt(sourceId, 10);
+      if (isNaN(tId) || isNaN(sId) || tId === sId) {
+        return { success: false, message: '无效的合并参数' };
+      }
+
+      const target = await ActorFromNfo.findByPk(tId);
+      const source = await ActorFromNfo.findByPk(sId);
+      if (!target || !source) {
+        return { success: false, message: '待合并的演员不存在' };
+      }
+
+      // 记录用于头像合并的名称信息
+      const targetNames = [];
+      const sourceNames = [];
+
+      await sequelize.transaction(async (t) => {
+        // 1. 迁移影片关联 movie_actors_from_nfo
+        const sourceLinks = await MovieActorFromNfo.findAll({
+          where: { actor_from_nfo_id: sId },
+          transaction: t
+        });
+
+        if (sourceLinks.length > 0) {
+          const existingTargetLinks = await MovieActorFromNfo.findAll({
+            where: { actor_from_nfo_id: tId },
+            transaction: t
+          });
+          const existingMovieIds = new Set(existingTargetLinks.map(l => l.movie_id));
+
+          for (const link of sourceLinks) {
+            if (!existingMovieIds.has(link.movie_id)) {
+              await MovieActorFromNfo.create({
+                movie_id: link.movie_id,
+                actor_from_nfo_id: tId
+              }, { transaction: t });
+            }
+          }
+
+          await MovieActorFromNfo.destroy({
+            where: { actor_from_nfo_id: sId },
+            transaction: t
+          });
+        }
+
+        // 2. 合并别名到 target.former_names（保留 target 原有 display_name / former_names，不改 name）
+        const targetFormer = parseFormerNames(target.former_names);
+        const mergedFormerSet = new Set(targetFormer);
+
+        const sourceNames = [];
+        if (source.name && String(source.name).trim()) sourceNames.push(String(source.name).trim());
+        if (source.display_name && String(source.display_name).trim()) sourceNames.push(String(source.display_name).trim());
+        parseFormerNames(source.former_names).forEach(n => sourceNames.push(n));
+
+        sourceNames.forEach(n => {
+          if (n && typeof n === 'string' && n.trim()) mergedFormerSet.add(n.trim());
+        });
+
+        // 去重：页面在 display_name 为空时会用 name 作为展示名，故用「有效展示名」参与去重，避免合并后曾用名与展示名重复
+        const targetNameTrim = target.name && String(target.name).trim();
+        const effectiveDisplayName = (target.display_name && String(target.display_name).trim()) || targetNameTrim || null;
+        if (effectiveDisplayName) mergedFormerSet.delete(effectiveDisplayName);
+        if (targetNameTrim && targetNameTrim !== effectiveDisplayName) mergedFormerSet.delete(targetNameTrim);
+
+        const mergedFormer = Array.from(mergedFormerSet);
+
+        // 若 target 原本无 display_name，合并后将其设为 name，使展示名与曾用名去重结果在库中一致
+        const targetUpdate = {
+          former_names: mergedFormer.length ? JSON.stringify(mergedFormer) : null
+        };
+        if (!(target.display_name && String(target.display_name).trim())) {
+          targetUpdate.display_name = target.name;
+        }
+        await target.update(targetUpdate, { transaction: t });
+
+        // 3. 将 source 标记为已合并到 target
+        await source.update({
+          merged_to_id: tId
+        }, { transaction: t });
+      });
+
+      // 事务成功后，同步更新演员头像映射：将 source 相关名称下的头像候选合并到 target
+      try {
+        const namesTarget = [];
+        if (target.name && String(target.name).trim()) namesTarget.push(String(target.name).trim());
+        if (target.display_name && String(target.display_name).trim()) namesTarget.push(String(target.display_name).trim());
+        parseFormerNames(target.former_names).forEach(n => {
+          if (n && String(n).trim()) namesTarget.push(String(n).trim());
+        });
+        const namesSource = [];
+        if (source.name && String(source.name).trim()) namesSource.push(String(source.name).trim());
+        if (source.display_name && String(source.display_name).trim()) namesSource.push(String(source.display_name).trim());
+        parseFormerNames(source.former_names).forEach(n => {
+          if (n && String(n).trim()) namesSource.push(String(n).trim());
+        });
+        if (namesTarget.length && namesSource.length) {
+          actorAvatarService.mergeActorAvatars(namesTarget, namesSource);
+        }
+      } catch (e) {
+        console.warn('合并演员头像映射失败（忽略，不影响主流程）:', e.message || String(e));
+      }
+
+      runActorAvatarScanInBackground();
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e?.message || String(e) };
     }
   });
 
@@ -1416,6 +1831,7 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
           name: folderName,
           viewMode: 'folder'
         };
+        actorData.avatar = attachAvatarToActor(folderName);
         
         console.log('文件目录模式查询 - 文件夹名:', folderName, '查询条件:', JSON.stringify(where));
         
@@ -1485,10 +1901,13 @@ function registerIpcHandlers(mainWindow, dataPath, store) {
         actorData = {
           id: actor.id,
           name: actor.name,
+          display_name: actor.display_name || null,
+          former_names: parseFormerNames(actor.former_names),
           viewMode: 'actor',
           created_at: actor.created_at,
           updated_at: actor.updated_at
         };
+        actorData.avatar = attachAvatarToActor(actor.name);
         
         if (filterPlayable) {
           where.playable = true;

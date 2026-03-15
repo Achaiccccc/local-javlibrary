@@ -13,7 +13,7 @@
             <span>数据路径设置</span>
           </template>
           <el-form :model="form" label-width="120px">
-            <el-form-item label="数据路径">
+            <el-form-item label="影片数据路径">
               <div style="width: 100%;">
                 <div
                   v-for="(path, index) in dataPaths"
@@ -42,6 +42,16 @@
                   添加路径
                 </el-button>
               </div>
+            </el-form-item>
+            <el-form-item label="演员数据路径">
+              <div style="width: 100%; display: flex; align-items: center; gap: 8px;">
+                <el-input v-model="actorDataPath" readonly placeholder="未配置" style="flex: 1;" />
+                <el-button type="primary" @click="chooseActorDataPath">选择路径</el-button>
+                <el-button v-if="actorDataPath" type="default" @click="clearActorDataPath">清除</el-button>
+              </div>
+              <el-text type="info" size="small" style="display: block; margin-top: 4px;">
+                可选。选择包含 Filetree.json 与 Content 目录的演员数据文件夹，用于展示演员头像。
+              </el-text>
             </el-form-item>
             <el-form-item>
               <el-button @click="goBack">返回</el-button>
@@ -73,6 +83,9 @@
               </el-button>
               <el-button type="primary" @click="runSyncDiff" :loading="syncDiffLoading" :disabled="scanning || syncDiffLoading" style="margin-left: 8px;">
                 仅扫描新增或修改
+              </el-button>
+              <el-button type="default" @click="scanActors" :loading="scanActorsLoading" style="margin-left: 8px;">
+                扫描演员信息
               </el-button>
             </el-form-item>
             <el-form-item v-if="scanning || scanProgress.total > 0" label="完整扫描进度">
@@ -194,7 +207,9 @@ import { useScanStore } from '../stores/scanStore';
 const router = useRouter();
 const scanStore = useScanStore();
 const dataPaths = ref([]);
+const actorDataPath = ref('');
 const autoScanOnStartup = ref(true);
+const scanActorsLoading = ref(false);
 const scanning = ref(false);
 const syncDiffLoading = ref(false);
 const syncDiffProgress = ref({
@@ -235,6 +250,60 @@ const loadDataPaths = async () => {
     } catch (e) {
       dataPaths.value = [];
     }
+  }
+};
+
+const loadActorDataPath = async () => {
+  try {
+    const p = await window.electronAPI.settings.getActorDataPath();
+    actorDataPath.value = p || '';
+  } catch (error) {
+    console.error('加载演员数据路径失败:', error);
+    actorDataPath.value = '';
+  }
+};
+
+const chooseActorDataPath = async () => {
+  try {
+    const result = await window.electronAPI.settings.setActorDataPath();
+    if (result.success) {
+      actorDataPath.value = result.path || '';
+      ElMessage.success('演员数据路径已设置');
+    } else {
+      if (result.message && result.message !== '已取消') ElMessage.warning(result.message);
+    }
+  } catch (error) {
+    ElMessage.error('设置失败: ' + (error?.message || error));
+  }
+};
+
+const clearActorDataPath = async () => {
+  try {
+    await window.electronAPI.settings.clearActorDataPath();
+    actorDataPath.value = '';
+    ElMessage.success('已清除演员数据路径');
+  } catch (e) {
+    ElMessage.error('清除失败: ' + (e?.message || e));
+  }
+};
+
+const scanActors = async () => {
+  if (!actorDataPath.value) {
+    ElMessage.warning('请先在上方配置演员数据路径');
+    return;
+  }
+  scanActorsLoading.value = true;
+  try {
+    const result = await window.electronAPI.system.scanActors();
+    if (result.success) {
+      ElMessage.success(`演员信息扫描完成，共 ${result.actorCount ?? 0} 位演员、${result.imageCount ?? 0} 张头像`);
+    } else {
+      ElMessage.error(result.message || '扫描失败');
+    }
+  } catch (error) {
+    ElMessage.error('扫描失败: ' + (error?.message || error));
+  } finally {
+    scanActorsLoading.value = false;
   }
 };
 
@@ -472,6 +541,7 @@ const goBack = () => {
 
 onMounted(async () => {
   loadDataPaths();
+  loadActorDataPath();
   loadFilterPlayable();
   loadAutoScanOnStartup();
 

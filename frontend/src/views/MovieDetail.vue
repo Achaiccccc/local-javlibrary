@@ -60,21 +60,60 @@
                 {{ movie.runtime ? movie.runtime + ' 分钟' : '未知' }}
               </el-descriptions-item>
               <el-descriptions-item label="演员">
-                <div v-if="movie.actors && movie.actors.length > 0" class="link-list">
-                  <el-link
-                    v-for="(actor, index) in movie.actors"
-                    :key="actor.id || `actor-${index}`"
-                    :type="actor.inDatabase ? 'primary' : 'info'"
-                    :disabled="!actor.inDatabase"
-                    :style="{ 
-                      marginRight: '8px',
-                      color: actor.inDatabase ? '' : '#909399',
-                      cursor: actor.inDatabase ? 'pointer' : 'not-allowed'
-                    }"
-                    @click="actor.inDatabase && goToActor(actor.id)"
-                  >
-                    {{ actor.name }}
-                  </el-link>
+                <div v-if="movie.actors && movie.actors.length > 0" class="actor-list-wrap">
+                  <template v-if="movie.actors.some(a => a.avatar?.hasAvatar)">
+                    <div class="actor-list-grid">
+                      <div
+                        v-for="(actor, index) in movie.actors"
+                        :key="actor.id || `actor-${index}`"
+                        class="actor-cell"
+                      >
+                        <div
+                          class="actor-avatar-wrap"
+                          :class="{ clickable: actor.inDatabase }"
+                          @click="actor.inDatabase && goToActor(actor.id)"
+                        >
+                          <el-image
+                            v-if="actor.avatar?.hasAvatar"
+                            :src="actor.avatar.url"
+                            fit="cover"
+                            class="actor-avatar-img"
+                            :preview-src-list="[actor.avatar.url]"
+                            :preview-teleported="true"
+                            :hide-on-click-modal="true"
+                          >
+                            <template #error>
+                              <div class="actor-avatar-placeholder">加载失败</div>
+                            </template>
+                          </el-image>
+                          <div v-else class="actor-avatar-placeholder">无头像</div>
+                        </div>
+                        <div
+                          class="actor-name-text"
+                          :class="{ disabled: !actor.inDatabase }"
+                          @click="actor.inDatabase && goToActor(actor.id)"
+                        >
+                          {{ actor.display_name && actor.display_name.trim() ? actor.display_name.trim() : (actor.name || '') }}
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  <div v-else class="link-list">
+                    <el-link
+                      v-for="(actor, index) in movie.actors"
+                      :key="actor.id || `actor-${index}`"
+                      :type="actor.inDatabase ? 'primary' : 'info'"
+                      :disabled="!actor.inDatabase"
+                      :style="{ 
+                        marginRight: '8px',
+                        color: actor.inDatabase ? '' : '#909399',
+                        cursor: actor.inDatabase ? 'pointer' : 'not-allowed'
+                      }"
+                      @click="actor.inDatabase && goToActor(actor.id)"
+                    >
+                      {{ actor.display_name && actor.display_name.trim() ? actor.display_name.trim() : (actor.name || '') }}
+                    </el-link>
+                  </div>
                 </div>
                 <span v-else>未知</span>
               </el-descriptions-item>
@@ -342,7 +381,7 @@
 
 <script setup>
 defineOptions({ name: 'MovieDetail' });
-import { ref, onMounted, computed, onBeforeMount, onBeforeUnmount } from 'vue';
+import { ref, onMounted, computed, onBeforeMount, onBeforeUnmount, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { VideoPlay, FolderOpened, DocumentCopy, Edit, Star, StarFilled } from '@element-plus/icons-vue';
@@ -795,6 +834,14 @@ const goBack = () => {
   }
 };
 
+watch(
+  () => route.fullPath,
+  () => {
+    editDialogVisible.value = false;
+    favoriteDialogVisible.value = false;
+  }
+);
+
 onBeforeMount(() => {
   // 进入详情页时，滚动到顶部
   window.scrollTo({ top: 0, behavior: 'auto' });
@@ -899,6 +946,69 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.actor-list-wrap { margin: 0; }
+.actor-list-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.actor-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 80px;
+}
+.actor-avatar-wrap {
+  position: relative;
+  margin-bottom: 4px;
+}
+.actor-avatar-wrap.clickable { cursor: pointer; }
+.actor-avatar-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  display: block;
+  background: var(--el-fill-color-light);
+}
+.actor-avatar-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  background: var(--el-fill-color-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--el-text-color-placeholder);
+}
+.actor-cell-edit-icon {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 4px;
+  background: var(--el-bg-color);
+  color: var(--el-color-primary);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.actor-name-text {
+  font-size: 12px;
+  color: var(--el-color-primary);
+  cursor: pointer;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.actor-name-text.disabled {
+  color: var(--el-text-color-secondary);
+  cursor: not-allowed;
 }
 
 .open-location-btn {

@@ -86,8 +86,8 @@
 
 <script setup>
 defineOptions({ name: 'FavoritesPage' });
-import { ref, onMounted, onActivated } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted, onActivated, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
@@ -96,6 +96,7 @@ import { getImageCacheKey } from '../utils/imageLoader';
 const PREVIEW_PAGE_SIZE = 8;
 
 const router = useRouter();
+const route = useRoute();
 const folders = ref([]);
 const folderPreviews = ref({});
 const previewImageCache = ref({});
@@ -228,6 +229,14 @@ onMounted(() => {
 onActivated(() => {
   loadFolders();
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    createVisible.value = false;
+    editVisible.value = false;
+  }
+);
 </script>
 
 <style scoped>

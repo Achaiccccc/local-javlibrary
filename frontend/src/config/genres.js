@@ -3,7 +3,7 @@
 // 大类仅用于前端展示分组，不存储在数据库中
 // 小分类需要存储在数据库中，即使本地数据中没有该分类也要显示
 
-export const genreCategories = [
+export const defaultGenreCategories = [
   {
     name: '主题',
     genres: [
@@ -331,9 +331,43 @@ export const genreCategories = [
   }
 ];
 
-// 列表页顶部筛选器分组配置（基于 genreCategories + 预开发分组）
-// 注意：不修改原有 genreCategories，仅在前端筛选 UI 中使用；类别与年份置顶，年份由新到旧
-export const filterGroups = [
+// 当前分类配置（运行时由用户配置覆盖，初始为空，仅作为占位）
+export const genreCategories = [];
+
+// 列表页顶部筛选器分组构建函数（基于传入 categories 或默认配置）
+// 类别与年份置顶，年份由新到旧
+export function buildFilterGroups(categoriesInput) {
+  const categories = (Array.isArray(categoriesInput) && categoriesInput.length > 0)
+    ? categoriesInput
+    : (genreCategories.length > 0 ? genreCategories : defaultGenreCategories);
+
+  const yearGroup = {
+    key: 'year',
+    type: 'year',
+    label: '年份',
+    options: (() => {
+      const opts = [{ label: '全部', value: 'all' }];
+      for (let y = 2026; y >= 2001; y--) {
+        opts.push({ label: String(y), value: String(y) });
+      }
+      return opts;
+    })()
+  };
+
+  const genreGroups = categories.map(category => ({
+    key: `genre_${category.name}`,
+    type: 'genre',
+    label: category.name,
+    options: [
+      { label: '全部', value: 'all' },
+      ...(category.genres || []).map(name => ({
+        label: name,
+        value: name
+      }))
+    ]
+  }));
+
+  return [
   // 预开发的「类别」分组（建设中，仅做 UI 展示，不参与当前筛选逻辑）
   // {
   //   key: 'type',
@@ -347,38 +381,18 @@ export const filterGroups = [
   //     { label: '其它', value: 'other' }
   //   ]
   // },
-  // 年份分组：2026→2001（最新在前）
-  {
-    key: 'year',
-    type: 'year',
-    label: '年份',
-    options: (() => {
-      const opts = [{ label: '全部', value: 'all' }];
-      for (let y = 2026; y >= 2001; y--) {
-        opts.push({ label: String(y), value: String(y) });
-      }
-      return opts;
-    })()
-  },
-  // 分类标签分组：直接复用所有标准分类，且在最前添加「全部」
-  ...genreCategories.map(category => ({
-    key: `genre_${category.name}`,
-    type: 'genre',
-    label: category.name,
-    options: [
-      { label: '全部', value: 'all' },
-      ...category.genres.map(name => ({
-        label: name,
-        value: name
-      }))
-    ]
-  }))
-];
+    yearGroup,
+    ...genreGroups
+  ];
+}
 
-// 获取所有分类名称（去重）
-export function getAllGenreNames() {
+// 获取所有分类名称（去重），可传入自定义 categories，默认使用当前或默认配置
+export function getAllGenreNames(categoriesInput) {
+  const categories = (Array.isArray(categoriesInput) && categoriesInput.length > 0)
+    ? categoriesInput
+    : (genreCategories.length > 0 ? genreCategories : defaultGenreCategories);
   const allGenres = new Set();
-  genreCategories.forEach(category => {
+  categories.forEach(category => {
     category.genres.forEach(genre => {
       allGenres.add(genre);
     });
@@ -386,9 +400,12 @@ export function getAllGenreNames() {
   return Array.from(allGenres);
 }
 
-// 根据分类名称查找所属大类
-export function getCategoryByGenre(genreName) {
-  for (const category of genreCategories) {
+// 根据分类名称查找所属大类，可传入自定义 categories，默认使用当前或默认配置
+export function getCategoryByGenre(genreName, categoriesInput) {
+  const categories = (Array.isArray(categoriesInput) && categoriesInput.length > 0)
+    ? categoriesInput
+    : (genreCategories.length > 0 ? genreCategories : defaultGenreCategories);
+  for (const category of categories) {
     if (category.genres.includes(genreName)) {
       return category.name;
     }

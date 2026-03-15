@@ -208,7 +208,7 @@
 defineOptions({ name: 'Search' });
 import { ref, computed, watch, onMounted, onActivated, onBeforeUnmount } from 'vue';
 import { useElementSize } from '@vueuse/core';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { VideoPlay, Star, StarFilled } from '@element-plus/icons-vue';
 import { useScanStore } from '../stores/scanStore';
@@ -222,6 +222,7 @@ const DEBOUNCE_MS = 700;
 const SIMPLE_PAGE_SIZE = 24;
 
 const router = useRouter();
+const route = useRoute();
 const scanStore = useScanStore();
 const listParams = useListParamsStore();
 const lastRefreshedDataVersion = ref(0);
@@ -550,6 +551,13 @@ const resetAdvancedForm = () => {
 onMounted(() => {
   loadOptions();
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    favoriteDialogVisible.value = false;
+  }
+);
 </script>
 
 <style scoped>

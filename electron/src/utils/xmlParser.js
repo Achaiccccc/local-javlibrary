@@ -86,7 +86,8 @@ async function parseNfoFile(nfoPath) {
     } else {
       content = iconv.decode(buffer, encoding);
     }
-    if (content.charCodeAt(0) === 0xFEFF) {
+    // 部分工具可能在文件头写入多个 BOM，需循环移除
+    while (content.charCodeAt(0) === 0xFEFF) {
       content = content.slice(1);
     }
     // 修复 URL 等文本中未转义的 &，避免 "Invalid character in entity name" 解析错误
@@ -234,6 +235,7 @@ async function writeNfoFile(nfoPath, movieData) {
 
 /**
  * 在根节点下设置或创建单个文本子节点（仅更新该标签内容，不删其他节点）
+ * 清空元素所有子节点后写入单一文本节点，避免原 NFO 中多文本节点（如换行）导致 XMLSerializer 序列化时丢失部分内容
  * @param {Document} doc
  * @param {Element} root - <movie>
  * @param {string} tagName - 如 title, runtime
@@ -247,8 +249,8 @@ function setOrCreateTextChild(doc, root, tagName, value) {
     root.appendChild(el);
   }
   const text = String(value ?? '');
-  if (el.firstChild) el.firstChild.nodeValue = text;
-  else el.appendChild(doc.createTextNode(text));
+  while (el.firstChild) el.removeChild(el.firstChild);
+  el.appendChild(doc.createTextNode(text));
 }
 
 /**
@@ -319,9 +321,14 @@ function removeFollowingWhitespace(root, ref) {
 async function updateNfoFilePartial(nfoPath, movieData) {
   const buffer = await fs.readFile(nfoPath);
   const encoding = detectEncoding(buffer);
-  const content = encoding.toLowerCase() === 'utf-8'
+  let content = encoding.toLowerCase() === 'utf-8'
     ? buffer.toString('utf-8')
     : iconv.decode(buffer, encoding);
+
+  // 统一移除可能存在的 BOM，避免 DOM 解析时在根节点前出现非空白字符
+  while (content.charCodeAt(0) === 0xFEFF) {
+    content = content.slice(1);
+  }
 
   const doc = new DOMParser().parseFromString(content, 'text/xml');
   const root = doc.documentElement;
@@ -344,12 +351,12 @@ async function updateNfoFilePartial(nfoPath, movieData) {
     if (hasUniqueid) {
       hasUniqueid.setAttribute('type', 'num');
       hasUniqueid.setAttribute('default', 'true');
-      if (hasUniqueid.firstChild) hasUniqueid.firstChild.nodeValue = codeText;
-      else hasUniqueid.appendChild(doc.createTextNode(codeText));
+      while (hasUniqueid.firstChild) hasUniqueid.removeChild(hasUniqueid.firstChild);
+      hasUniqueid.appendChild(doc.createTextNode(codeText));
     }
     if (hasNum) {
-      if (hasNum.firstChild) hasNum.firstChild.nodeValue = codeText;
-      else hasNum.appendChild(doc.createTextNode(codeText));
+      while (hasNum.firstChild) hasNum.removeChild(hasNum.firstChild);
+      hasNum.appendChild(doc.createTextNode(codeText));
     }
     if (!hasUniqueid && !hasNum) {
       const uid = doc.createElement('uniqueid');
@@ -421,7 +428,10 @@ async function readNfoTagContent(nfoPath, tagName) {
       encoding.toLowerCase() === 'utf-8'
         ? buffer.toString('utf-8')
         : iconv.decode(buffer, encoding);
-    if (content.charCodeAt(0) === 0xfeff) content = content.slice(1);
+    // 可能存在多个 BOM，循环移除
+    while (content.charCodeAt(0) === 0xfeff) {
+      content = content.slice(1);
+    }
     content = fixUnescapedAmpersands(content);
     content = fixScriptInContent(content);
     content = fixInvalidTagNames(content);

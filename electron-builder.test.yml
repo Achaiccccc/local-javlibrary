@@ -1,0 +1,48 @@
+# 测试环境打包：appId/productName/output 与正式版区分，安装后数据与正式版隔离
+appId: com.javlibrary.app.test
+productName: JavLibrary_beta
+# 覆盖打包进应用内的 package.json 的 name，使 app.getName() 为 JavLibrary_beta，主进程才能正确走测试版 userData/store 隔离
+extraMetadata:
+  name: JavLibrary_beta
+directories:
+  buildResources: build
+  output: dist-test
+files:
+  - electron/**/*
+  - frontend/dist/**/*
+  - package.json
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!.editorconfig"
+  - "!**/._*"
+  - "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}"
+  - "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}"
+  - "!**/{appveyor.yml,.travis.yml,circle.yml}"
+  - "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  sign: null
+  signingHashAlgorithms: null
+  verifyUpdateCodeSignature: false
+  requestedExecutionLevel: null
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: "${productName}-Setup-${version}.${ext}"
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  allowElevation: true
+electronVersion: 28.0.0
+nodeGypRebuild: false
+npmRebuild: false
+asar: true
+asarUnpack:
+  - "**/node_modules/sqlite3/**/*"
+  - "**/node_modules/**/*.node"
+buildDependenciesFromSource: false

@@ -323,6 +323,14 @@ async function handleNewMovie(movieFolderPath, dataPath, dataPathIndex = 0) {
         where: { name: actorName },
         defaults: { name: actorName }
       });
+      const targetActorId = nfoActor.merged_to_id || nfoActor.id;
+      if (targetActorId !== nfoActor.id) {
+        const canonical = await ActorFromNfo.findByPk(targetActorId);
+        if (canonical) {
+          await movie.addActorsFromNfo(canonical);
+          continue;
+        }
+      }
       await movie.addActorsFromNfo(nfoActor);
     }
   }
@@ -409,6 +417,14 @@ async function handleMovieUpdate(movieFolderPath, dataPath, dataPathIndex = 0) {
         where: { name: nfoActorName },
         defaults: { name: nfoActorName }
       });
+      const targetActorId = nfoActor.merged_to_id || nfoActor.id;
+      if (targetActorId !== nfoActor.id) {
+        const canonical = await ActorFromNfo.findByPk(targetActorId);
+        if (canonical) {
+          await movie.addActorsFromNfo(canonical);
+          continue;
+        }
+      }
       await movie.addActorsFromNfo(nfoActor);
     }
   }

@@ -17,8 +17,14 @@ const routes = [
     component: () => import('../views/MovieListPage.vue')
   },
   {
+    path: '/actor-catalog',
+    name: 'ActorCatalogOnly',
+    component: () => import('../views/ActorCatalog.vue'),
+    meta: { actorOnly: true }
+  },
+  {
     path: '/actors',
-    name: 'ActorCatalog',
+    name: 'DirectoryCatalog',
     component: () => import('../views/ActorCatalog.vue')
   },
   {

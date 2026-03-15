@@ -5,6 +5,7 @@ electron/node_modules/
 
 # Build outputs
 dist/
+dist-test/
 frontend/dist/
 build/
 *.db
@@ -36,8 +37,7 @@ Thumbs.db
 out/
 packages/
 
-# Environment
-.env
+# Environment（.env / .env.test 已纳入版本管理；仅忽略本地覆盖）
 .env.local
 
 # Documentation and test files (not for repository)

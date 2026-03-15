@@ -2,13 +2,17 @@
   <div class="genre-list">
     <el-container>
       <el-header class="page-header">
-        <div class="header-content">
-          <div class="header-left">
-            <el-button @click="goBack" icon="ArrowLeft">返回</el-button>
-            <h1 class="header-title">分类列表</h1>
+          <div class="header-content">
+            <div class="header-left">
+              <el-button @click="goBack" icon="ArrowLeft">返回</el-button>
+              <h1 class="header-title">分类列表</h1>
+            </div>
+            <div class="header-right">
+              <el-button type="primary" plain class="header-action-button" @click="openEditDialog">编辑当前分类列表</el-button>
+              <el-button plain class="header-action-button" @click="handleImportDefault">导入默认数据</el-button>
+              <ThemeSwitch />
+            </div>
           </div>
-          <ThemeSwitch />
-        </div>
       </el-header>
       <el-main class="page-theme-bg">
         <el-card>
@@ -45,23 +49,120 @@
         </el-card>
       </el-main>
     </el-container>
+
+    <el-dialog
+      v-model="editDialogVisible"
+      title="编辑分类列表"
+      width="640px"
+      :close-on-click-modal="false"
+    >
+      <div class="edit-dialog-body">
+        <div class="tree-ops">
+          <el-button size="small" type="primary" @click="addRootCategory">新增大类</el-button>
+          <el-button size="small" @click="addChildGenre" :disabled="!currentNode || currentNode.parent">新增子分类</el-button>
+          <el-button size="small" type="danger" :disabled="!currentNode" @click="removeCurrentNode">删除选中</el-button>
+        </div>
+        <el-tree
+          ref="treeRef"
+          class="genre-tree"
+          :data="treeData"
+          node-key="id"
+          default-expand-all
+          highlight-current
+          :expand-on-click-node="false"
+          @current-change="handleCurrentChange"
+        >
+          <template #default="{ data }">
+            <div class="tree-node-row">
+              <el-input
+                v-model="data.label"
+                size="small"
+                class="node-input"
+                :placeholder="data.parent ? '子分类名称' : '大类名称'"
+                @blur="trimNodeLabel(data)"
+              />
+              <span
+                v-if="data.parent && getNodeStats(data.label)"
+                class="node-stats"
+              >
+                <span class="node-stats-playable">
+                  {{ getNodeStats(data.label).playableCount }}
+                </span>
+                /
+                <span class="node-stats-total">
+                  {{ getNodeStats(data.label).totalCount }}
+                </span>
+              </span>
+            </div>
+          </template>
+        </el-tree>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="editDialogVisible = false">取 消</el-button>
+          <el-button type="primary" @click="saveTree">保 存</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 defineOptions({ name: 'GenreCatalog' });
-import { ref, onMounted, onActivated, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted, onActivated, computed, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { genreCategories } from '../config/genres';
+import { defaultGenreCategories } from '../config/genres';
 import { useScanStore } from '../stores/scanStore';
+import { useGenreCategoriesStore } from '../stores/genreCategoriesStore';
 import ThemeSwitch from '../components/ThemeSwitch.vue';
 
 const router = useRouter();
+const route = useRoute();
 const scanStore = useScanStore();
+const genreStore = useGenreCategoriesStore();
 const lastRefreshedDataVersion = ref(0);
 const loading = ref(true);
 const dbGenres = ref([]); // 数据库中的分类
+const dbGenreStatsMap = computed(() => {
+  const map = new Map();
+  dbGenres.value.forEach((g) => {
+    if (g && typeof g.name === 'string') {
+      map.set(g.name, {
+        playableCount: g.playableCount || 0,
+        totalCount: g.totalCount || 0
+      });
+    }
+  });
+  return map;
+});
+
+const editDialogVisible = ref(false);
+const treeData = ref([]);
+const treeRef = ref(null);
+const currentNode = ref(null);
+
+function buildTreeFromCategories(categories) {
+  const now = Date.now();
+  return categories.map((cat, i) => ({
+    id: `cat-${i}-${now}`,
+    label: cat.name,
+    children: (cat.genres || []).map((g, j) => ({
+      id: `cat-${i}-g-${j}-${now}`,
+      label: g,
+      parent: true // 标记为子节点，简化判断
+    }))
+  }));
+}
+
+function buildCategoriesFromTree(nodes) {
+  return nodes
+    .map(node => ({
+      name: (node.label || '').trim(),
+      genres: (node.children || []).map(ch => (ch.label || '').trim()).filter(Boolean)
+    }))
+    .filter(cat => cat.name);
+}
 
 const loadGenres = async () => {
   try {
@@ -81,7 +182,7 @@ const loadGenres = async () => {
   }
 };
 
-// 将标准分类配置与数据库中的分类合并
+// 将标准/配置分类与数据库中的分类合并
 const groupedGenres = computed(() => {
   // 创建数据库分类的映射（按名称）
   const dbGenreMap = new Map();
@@ -89,8 +190,13 @@ const groupedGenres = computed(() => {
     dbGenreMap.set(genre.name, genre);
   });
 
+  const categories =
+    (genreStore.categories && genreStore.categories.length > 0)
+      ? genreStore.categories
+      : defaultGenreCategories;
+
   // 处理每个大类
-  return genreCategories.map(category => {
+  return categories.map(category => {
     const genres = category.genres.map(genreName => {
       const dbGenre = dbGenreMap.get(genreName);
       if (dbGenre) {
@@ -120,6 +226,15 @@ const groupedGenres = computed(() => {
     };
   });
 });
+
+function getNodeStats(label) {
+  if (!label || typeof label !== 'string') return null;
+  const trimmed = label.trim();
+  if (!trimmed) return null;
+  const stats = dbGenreStatsMap.value.get(trimmed);
+  if (!stats || !stats.totalCount) return null;
+  return stats;
+}
 
 const goToGenreDetail = async (genreId, genreName) => {
   if (genreId) {
@@ -159,9 +274,102 @@ onActivated(() => {
   }
 });
 
-onMounted(() => {
+onMounted(async () => {
+  await genreStore.load();
   loadGenres();
 });
+
+watch(
+  () => route.fullPath,
+  () => {
+    editDialogVisible.value = false;
+  }
+);
+
+function openEditDialog() {
+  const categories =
+    (genreStore.categories && genreStore.categories.length > 0)
+      ? genreStore.categories
+      : defaultGenreCategories;
+  treeData.value = buildTreeFromCategories(categories);
+  currentNode.value = null;
+  editDialogVisible.value = true;
+}
+
+async function handleImportDefault() {
+  try {
+    await genreStore.appendDefault();
+    ElMessage.success('已导入默认分类数据');
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(e?.message || '导入默认分类数据失败');
+  }
+}
+
+function handleCurrentChange(data) {
+  currentNode.value = data || null;
+}
+
+function addRootCategory() {
+  const now = Date.now();
+  treeData.value.push({
+    id: `cat-new-${now}-${treeData.value.length}`,
+    label: '新建分类',
+    children: []
+  });
+}
+
+function addChildGenre() {
+  if (!currentNode.value) return;
+  // 仅允许在根节点下添加子分类（最多两层）
+  const rootNode = treeData.value.find(n => n.id === currentNode.value.id);
+  if (rootNode) {
+    if (!Array.isArray(rootNode.children)) rootNode.children = [];
+    rootNode.children.push({
+      id: `g-${Date.now()}-${rootNode.children.length}`,
+      label: '新建子分类',
+      parent: true
+    });
+  }
+}
+
+function removeCurrentNode() {
+  if (!currentNode.value) return;
+  const id = currentNode.value.id;
+  const roots = treeData.value;
+  const rootIndex = roots.findIndex(n => n.id === id);
+  if (rootIndex !== -1) {
+    roots.splice(rootIndex, 1);
+    currentNode.value = null;
+    return;
+  }
+  for (const root of roots) {
+    if (!Array.isArray(root.children)) continue;
+    const idx = root.children.findIndex(ch => ch.id === id);
+    if (idx !== -1) {
+      root.children.splice(idx, 1);
+      currentNode.value = null;
+      break;
+    }
+  }
+}
+
+function trimNodeLabel(node) {
+  if (!node || typeof node.label !== 'string') return;
+  node.label = node.label.trim();
+}
+
+async function saveTree() {
+  try {
+    const categories = buildCategoriesFromTree(treeData.value);
+    await genreStore.save(categories);
+    ElMessage.success('分类配置已保存');
+    editDialogVisible.value = false;
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(e?.message || '保存分类配置失败');
+  }
+}
 </script>
 
 <style scoped>
@@ -175,6 +383,16 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-action-button {
+  min-width: 130px;
+  padding: 8px 16px;
+  font-size: 14px;
 }
 .header-left { display: flex; align-items: center; }
 .header-title { margin: 0; margin-left: 16px; }
@@ -260,5 +478,51 @@ onMounted(() => {
 .genre-meta span:not(.playable-count) {
   color: inherit;
   font-weight: normal;
+}
+
+.edit-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tree-ops {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.genre-tree {
+  max-height: 400px;
+  overflow: auto;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 4px;
+  padding: 8px;
+}
+
+.node-input {
+  width: 220px;
+}
+
+.tree-node-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.node-stats {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--content-subtitle-color);
+}
+
+.node-stats-playable {
+  color: #67c23a;
+  font-weight: 600;
+}
+
+.node-stats-total {
+  color: var(--content-title-color);
 }
 </style>

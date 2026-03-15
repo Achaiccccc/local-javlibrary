@@ -1,6 +1,6 @@
 {
   "name": "javlibrary",
-  "version": "2.7.0",
+  "version": "2.8.1",
   "description": "本地影视库管理系统",
   "main": "electron/main.js",
   "scripts": {
@@ -11,7 +11,10 @@
     "build": "npm run build:frontend && npm run build:electron",
     "build:quick": "npm run build:frontend && npm run build:electron",
     "build:frontend": "cd frontend && npm run build",
+    "build:frontend:test": "cd frontend && npm run build -- --mode test",
     "build:electron": "electron-builder",
+    "build:electron:test": "electron-builder --config electron-builder.test.yml",
+    "build:test": "npm run build:frontend:test && npm run build:electron:test",
     "postinstall": "electron-builder install-app-deps",
     "rebuild:sqlite3": "electron-rebuild -f -w sqlite3",
     "start": "electron ."
@@ -39,6 +42,7 @@
     "iconv-lite": "^0.6.3",
     "js2xmlparser": "^5.0.0",
     "jschardet": "^3.0.0",
+    "opencc-js": "^1.0.5",
     "sequelize": "^6.35.2",
     "sharp": "^0.33.2",
     "sqlite3": "^5.1.7",

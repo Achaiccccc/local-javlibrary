@@ -2,11 +2,10 @@ const Store = require('electron-store');
 const { dialog } = require('electron');
 const fs = require('fs-extra');
 const path = require('path');
+const { getStoreName } = require('./storeName');
 
-// 用户数据存于 AppData（electron-store 默认），开发/正式环境通过 name 区分
-const store = new Store({
-  name: process.env.NODE_ENV === 'development' ? 'javlibrary-dev' : 'javlibrary'
-});
+// 用户数据存于 AppData（electron-store 默认），开发/正式/测试环境通过 name 区分
+const store = new Store({ name: getStoreName() });
 
 /**
  * 获取所有data文件夹路径（兼容旧版本单个路径）
